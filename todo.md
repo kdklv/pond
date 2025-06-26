@@ -125,22 +125,27 @@
 **Implementation Details:**
 1.  **Input Handler (`src/input_handler.py`):**
     -   Create an `InputHandler` class. This is a complex task; using a library like `pynput` is recommended for listening to keyboard events system-wide without needing a focused window.
-    -   Map keys to actions:
-        -   `Right Arrow`: Next video
-        -   `Right Mouse click`: Next video
-        -   `Left Arrow`: Previous video / Restart current
-        -   `Left Mouse click`: Previous video / Restart current
-        -   `Spacebar`: Play/Pause
+    -   Map keys to actions, aligning with `TECH_STACK.md`:
+        -   **Navigation:**
+        -   `→ (Right Arrow)`: Next video (channel surf)
+        -   `← (Left Arrow)`: Previous video / restart current
+        -   `Spacebar`: Play/Pause toggle
+        -   `Backspace`: Restart current video
+        -   **Volume & State:**
+        -   `↑ (Up Arrow)`: Volume up
+        -   `↓ (Down Arrow)`: Volume down
+        -   `M`: Mute toggle
         -   `S`: Mark current video as "Seen"
-        -   `Up Arrow`: Volume up
-        -   `Down Arrow`: Volume down
-        -   `Scroll Up`: Volume up
-        -   `Scroll Down`: Volume down
-
-
-
-
-        
+        -   **UI & System:**
+        -   `I` / `P`: Show/Hide Channel Guide
+        -   `ESC`: Graceful shutdown
+        -   **Mouse Controls:**
+        -   `Left Click`: Play/Pause
+        -   `Right Click`: Previous video / restart
+        -   `Middle Click`: Next video
+        -   `Scroll Up/Down`: Volume up/down
+        -   **Advanced (Hold):**
+        -   `Hold ←/→` or `Hold Left/Right Mouse`: Fast seek backward/forward
     -   The handler should use a callback or queue system to communicate these actions back to the main application loop.
 2.  **Connecting Controls to Player:**
     -   The `PlayerController` needs methods to handle these actions: `toggle_pause()`, `seek()`, `stop()`, etc.

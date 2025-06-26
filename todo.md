@@ -14,9 +14,17 @@
 
 ## ✅ Actionable Implementation Tasks
 
-### **Task 1: [ ] Foundation - Project Setup, USB Detection, and Corruption-Proof Database**
+### **Task 1: [x] Foundation - Project Setup, USB Detection, and Corruption-Proof Database**
 
 **Goal:** Establish the project's skeleton and create the two foundational components: detecting the media source and ensuring the database can be written to safely.
+
+**Implementation Notes:**
+- The project structure (`src`, `config`, `logs`) and `requirements.txt` have been created.
+- A central logger was set up in `src/utils.py`.
+- `src/database_manager.py` was implemented with a `DatabaseManager` class that performs atomic writes by saving to a `.tmp` file before renaming. This prevents database corruption on power loss.
+- `src/usb_manager.py` was implemented with a `USBManager` class that uses `psutil` to find a connected drive containing a `Movies` directory marker.
+- Both modules include `if __name__ == '__main__':` blocks for standalone testing.
+- All dependencies were installed and tests were run successfully.
 
 **Implementation Details:**
 1.  **Project Structure:**
@@ -44,9 +52,18 @@
 
 ---
 
-### **Task 2: [ ] Media Scanner - Cataloging Movies and TV Shows**
+### **Task 2: [x] Media Scanner - Cataloging Movies and TV Shows**
 
 **Goal:** Scan the media drive and use our corruption-proof database manager to create a structured catalog of all available content.
+
+**Implementation Notes:**
+- Implemented the `MediaScanner` class in `src/media_scanner.py`.
+- The scanner uses regex to parse movie titles/years and series/season/episode numbers from filenames.
+- It correctly identifies video files based on a list of common extensions.
+- The `scan` method now loads the existing database first to create a lookup of old file data.
+- When new media is scanned, it preserves the `status` and `resume_position` from the old database, ensuring user data is not lost on a re-scan.
+- The final database structure for series was adjusted to a list of dictionaries as intended for the final YAML structure.
+- A comprehensive test case was added to the `if __name__ == '__main__':` block, which builds a temporary file structure, runs a scan, modifies the DB, and re-scans to verify that state is preserved. The test passed successfully.
 
 **Implementation Details:**
 1.  **File System Scanning (`src/media_scanner.py`):**
@@ -70,9 +87,15 @@
 
 ---
 
-### **Task 3: [ ] Playback Engine - Smart Playlist and MPV Integration**
+### **Task 3: [x] Playback Engine - Smart Playlist and MPV Integration**
 
 **Goal:** Read the media database, create an intelligent playback queue, and get the first video playing on the screen using `mpv`.
+
+**Implementation Notes:**
+- Added `python-mpv` to `requirements.txt` and installed it.
+- Implemented `PlayerController` in `src/player_controller.py`. It initializes an `mpv` instance configured for fullscreen, GUI-less playback. It includes a `play()` method that blocks until playback is finished. A test block requiring manual user confirmation (closing the mpv window) was included.
+- Implemented `PlaylistEngine` in `src/playlist_engine.py`. Its `create_playlist()` method correctly filters out "Seen" items and, crucially, only adds the single *next* unseen episode for each TV series, preventing future episodes from populating the queue. It then shuffles all eligible items.
+- The `PlaylistEngine` test passed successfully, confirming the smart selection logic is correct.
 
 **Implementation Details:**
 1.  **Playlist Engine (`src/playlist_engine.py`):**
@@ -104,9 +127,20 @@
     -   Create an `InputHandler` class. This is a complex task; using a library like `pynput` is recommended for listening to keyboard events system-wide without needing a focused window.
     -   Map keys to actions:
         -   `Right Arrow`: Next video
+        -   `Right Mouse click`: Next video
         -   `Left Arrow`: Previous video / Restart current
+        -   `Left Mouse click`: Previous video / Restart current
         -   `Spacebar`: Play/Pause
         -   `S`: Mark current video as "Seen"
+        -   `Up Arrow`: Volume up
+        -   `Down Arrow`: Volume down
+        -   `Scroll Up`: Volume up
+        -   `Scroll Down`: Volume down
+
+
+
+
+        
     -   The handler should use a callback or queue system to communicate these actions back to the main application loop.
 2.  **Connecting Controls to Player:**
     -   The `PlayerController` needs methods to handle these actions: `toggle_pause()`, `seek()`, `stop()`, etc.

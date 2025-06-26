@@ -17,9 +17,7 @@ PondTV transforms your Raspberry Pi into a plug-and-play, old-school TV channel 
 8. User Interaction
 9. Setup Guide
 10. Development Roadmap
-11. Future Ideas
-12. Contributing
-13. License
+
 
 ---
 

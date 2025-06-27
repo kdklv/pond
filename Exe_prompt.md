@@ -1,1 +1,0 @@
-Read TODO.md  and implement the next incomplete task. Apply changes, test them, and update TODO.md  to mark the task as complete with short explanation how was it implemented.

@@ -48,9 +48,10 @@ class PlaylistEngine:
                     break  # Found the first unseen one, stop looking for this series
             
             if next_unseen_episode:
-                # Add series context to the episode for easier identification
-                next_unseen_episode['series_name'] = series.get('series_name')
-                eligible_content.append(next_unseen_episode)
+                # Create a copy to avoid mutating the original database
+                episode_copy = next_unseen_episode.copy()
+                episode_copy['series_name'] = series.get('series_name')
+                eligible_content.append(episode_copy)
                 log.info(f"Added next unseen episode for '{series.get('series_name')}': S{next_unseen_episode['season']}E{next_unseen_episode['episode']}")
 
         log.info(f"Total eligible items for shuffling: {len(eligible_content)}")

@@ -1,3 +1,4 @@
 PyYAML
 psutil
-python-mpv 
+python-mpv
+pynput 

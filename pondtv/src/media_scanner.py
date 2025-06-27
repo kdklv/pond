@@ -40,7 +40,7 @@ class MediaScanner:
         if os.path.isdir(movies_path):
             for filename in os.listdir(movies_path):
                 if filename.lower().endswith(self.video_formats):
-                    filepath = os.path.join('Movies', filename)
+                    filepath = os.path.join('Movies', filename).replace('\\', '/')
                     movie_data = old_movies.get(filepath, {})
                     
                     match = self.movie_regex.match(os.path.splitext(filename)[0])
@@ -66,7 +66,7 @@ class MediaScanner:
                         if os.path.isdir(season_path):
                             for episode_filename in os.listdir(season_path):
                                 if episode_filename.lower().endswith(self.video_formats):
-                                    filepath = os.path.join('TV_Shows', series_name, season_folder, episode_filename)
+                                    filepath = os.path.join('TV_Shows', series_name, season_folder, episode_filename).replace('\\', '/')
                                     episode_data = old_series_episodes.get(filepath, {})
                                     
                                     match = self.series_regex.match(episode_filename)

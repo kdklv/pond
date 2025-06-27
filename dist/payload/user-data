@@ -1,0 +1,20 @@
+#cloud-config
+# PondTV First-Boot Setup
+# This will run on the first boot to install PondTV.
+# NOTE: An internet connection is required ONCE to install 'mpv'.
+
+packages:
+  - mpv
+
+runcmd:
+  - 'echo "--- Installing PondTV ---"'
+  - 'pip3 install --no-index --find-links=/boot/pip_packages -r /boot/pondtv/requirements.txt'
+  - 'mkdir -p /opt/pondtv'
+  - 'cp -r /boot/pondtv/* /opt/pondtv/'
+  - 'sed -i "s|/opt/pondtv/run.py|/opt/pondtv/run.py|g" /boot/pondtv.service'
+  - 'cp /boot/pondtv.service /etc/systemd/system/'
+  - 'systemctl daemon-reload'
+  - 'systemctl enable pondtv.service'
+  - 'echo "PondTV installation complete. Rebooting in 10 seconds..."'
+  - 'sleep 10'
+  - 'reboot'

@@ -1,8 +1,7 @@
-<p align="center">
 # 🪷 PondTV ⛲
-</p>
 
-<p align="center">
+
+<p align="left">
   <img src="logo.png" alt="PondTV Logo" width="256"/>
 </p>
 

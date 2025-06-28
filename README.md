@@ -1,7 +1,7 @@
 # 🌊 PondTV
 
 <p align="center">
-  <img src="assets/logo.png" alt="PondTV Logo" width="256"/>
+  <img src="logo.png" alt="PondTV Logo" width="256"/>
 </p>
 
 > A calm, offline alternative to streaming services—content flows from your personal collection, not an endless stream.

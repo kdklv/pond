@@ -1,4 +1,4 @@
-# 🌊 PondTV
+# 🪷 PondTV ⛲
 
 <p align="center">
   <img src="logo.png" alt="PondTV Logo" width="256"/>
@@ -8,7 +8,7 @@
 
 PondTV turns your Raspberry Pi into a plug-and-play TV channel for your media. Think of it as a dumb-TV, just like dumb-phones: no apps, no menus, just simple playback from your USB drive. Power on and watch—effortless.
 
-## ✨ Features
+## 🐸 Features
 
 - **Instant-On Playback** - Boots straight into fullscreen media
 - **Smart Playlists** - Prevents binge-watching by intelligently selecting the next episode in a series
@@ -17,7 +17,7 @@ PondTV turns your Raspberry Pi into a plug-and-play TV channel for your media. T
 - **Content Tracking** - Remembers what you've watched and where you left off
 - **Hot-Plug Support** - Handles USB drive disconnections gracefully
 
-## 🗂️ Preparing Your Media
+## 🌿 Preparing Your Media
 
 Organize your files on a USB drive like this:
 
@@ -33,7 +33,7 @@ USB_DRIVE/
 
 See the `examples/` folder for a working example you can copy.
 
-## 🚀 Installation
+## 🍀 Installation
 
 Choose your preferred installation method:
 
@@ -62,7 +62,7 @@ cd pond
 sudo ./scripts/install_ssh.sh
 ```
 
-## 🎮 Controls
+## 🌀 Controls
 
 | Key | Action |
 |-----|--------|
@@ -76,11 +76,11 @@ sudo ./scripts/install_ssh.sh
 | **I/P** | Toggle guide |
 | **Esc** | Quit |
 
-## 🛠️ Configuration
+## 🏊 Configuration
 
 PondTV creates a `config.yml` on your USB drive for customization. The app will generate default settings on first run.
 
-## 🔮 Future Ideas
+## 🏝 Future Ideas
 
 - **Random Mode** - Shuffle content randomly, mimicking flipping through TV channels
 - **Commercial Breaks** - Insert commercials between content for nostalgic TV feel

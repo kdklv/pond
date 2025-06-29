@@ -44,9 +44,12 @@ fi
 cd $TEMP_DIR
 
 echo "🐍 Creating virtual environment and installing Python dependencies..."
-mkdir -p $VENV_DIR
-chown -R $PI_USER:$PI_USER $(dirname $VENV_DIR)
-sudo -u $PI_USER python3 -m venv $VENV_DIR
+# Clean up old venv if it exists, to ensure a clean state
+rm -rf $VENV_DIR
+mkdir -p $APP_DIR
+chown $PI_USER:$PI_USER $APP_DIR
+# Create venv with access to system packages (for PyGObject)
+sudo -u $PI_USER python3 -m venv --system-site-packages $VENV_DIR
 sudo -u $PI_USER $VENV_DIR/bin/pip install -r requirements.txt
 
 echo "📁 Installing PondTV to $APP_DIR..."

@@ -91,14 +91,21 @@ class USBManager:
         """Mounts a partition using udisksctl."""
         try:
             cmd = ["udisksctl", "mount", "--block-device", device_path, "--no-user-interaction"]
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=15)
             # Output is typically: "Mounted /dev/sdb1 at /media/user/MEDIA_NAME."
-            match = re.search(r'at\s(/.*)\.', result.stdout)
+            match = re.search(r'at\s(/media/.*)\.', result.stdout)
             if match:
                 return match.group(1).strip()
+            log.warning(f"Could not parse mount point from udisksctl output: {result.stdout}")
             return None
-        except (subprocess.CalledProcessError, FileNotFoundError) as e:
-            log.error(f"Failed to mount {device_path} with udisksctl: {e}")
+        except subprocess.TimeoutExpired as e:
+            log.error(f"Mount command for {device_path} timed out. Stderr: {e.stderr}")
+            return None
+        except subprocess.CalledProcessError as e:
+            log.error(f"Failed to mount {device_path} with udisksctl. Stderr: {e.stderr}")
+            return None
+        except FileNotFoundError:
+            log.error("udisksctl command not found. Please ensure udisks2 is installed.")
             return None
 
     def _unmount_partition(self, device_path: str):

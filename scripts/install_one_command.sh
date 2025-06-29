@@ -21,7 +21,7 @@ fi
 
 echo "📦 Installing system dependencies..."
 apt-get update -qq
-apt-get install -y mpv python3-pip git
+apt-get install -y mpv python3-pip git python3-venv
 
 echo "📥 Downloading PondTV..."
 cd /tmp
@@ -29,18 +29,22 @@ rm -rf pond
 git clone https://github.com/kdklv/pond.git
 cd pond
 
-echo "🐍 Installing Python dependencies..."
-pip3 install -r requirements.txt
+APP_DIR="/opt/pondtv"
+VENV_DIR="$APP_DIR/venv"
 
-echo "📁 Installing PondTV to /opt/pondtv..."
-mkdir -p /opt/pondtv
-cp -r ./pondtv /opt/pondtv/
-cp ./run.py /opt/pondtv/
-cp ./requirements.txt /opt/pondtv/
-chown -R pi:pi /opt/pondtv
+echo "🐍 Installing Python dependencies into a virtual environment..."
+mkdir -p $APP_DIR
+chown pi:pi $APP_DIR
+sudo -u pi python3 -m venv $VENV_DIR
+sudo -u pi $VENV_DIR/bin/pip install -r requirements.txt
+
+echo "📁 Installing PondTV to $APP_DIR..."
+cp -r ./pondtv $APP_DIR/
+cp ./run.py $APP_DIR/
+cp ./requirements.txt $APP_DIR/ # For reference
 
 echo "⚙️  Creating systemd service..."
-cat > /etc/systemd/system/pondtv.service << 'EOF'
+cat > /etc/systemd/system/pondtv.service << EOF
 [Unit]
 Description=PondTV Media Player
 After=network.target
@@ -48,8 +52,8 @@ After=network.target
 [Service]
 Type=simple
 User=pi
-WorkingDirectory=/opt/pondtv
-ExecStart=/usr/bin/python3 /opt/pondtv/run.py
+WorkingDirectory=$APP_DIR
+ExecStart=$VENV_DIR/bin/python3 $APP_DIR/run.py
 Restart=always
 RestartSec=10
 Environment=DISPLAY=:0

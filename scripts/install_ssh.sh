@@ -12,26 +12,28 @@ fi
 # 2. Update package list and install dependencies
 echo "--> Updating package list and installing dependencies..."
 apt-get update
-apt-get install -y mpv python3-pip
+apt-get install -y mpv python3-pip python3-venv
 
-# 3. Install Python libraries
-echo "--> Installing Python libraries..."
-pip3 install -r requirements.txt
-
-# 4. Copy application files
+# 3. Create application directory and virtual environment
 APP_DIR="/opt/pondtv"
-echo "--> Copying application files to $APP_DIR..."
+VENV_DIR="$APP_DIR/venv"
+echo "--> Creating application directory and virtual environment at $APP_DIR..."
 mkdir -p $APP_DIR
+chown pi:pi $APP_DIR
+sudo -u pi python3 -m venv $VENV_DIR
 
+# 4. Install Python libraries into the virtual environment
+echo "--> Installing Python libraries..."
+sudo -u pi $VENV_DIR/bin/pip install -r requirements.txt
+
+# 5. Copy application files
+echo "--> Copying application files to $APP_DIR..."
 # Copy the application
 cp -r ./pondtv $APP_DIR/
 cp ./run.py $APP_DIR/
-cp ./requirements.txt $APP_DIR/
+cp ./requirements.txt $APP_DIR/ # Copying requirements for reference
 
-# Ensure correct ownership
-chown -R pi:pi $APP_DIR
-
-# 5. Create and install the systemd service
+# 6. Create and install the systemd service
 echo "--> Creating systemd service..."
 cat > /etc/systemd/system/pondtv.service << EOF
 [Unit]
@@ -41,8 +43,8 @@ After=network.target
 [Service]
 Type=simple
 User=pi
-WorkingDirectory=/opt/pondtv
-ExecStart=/usr/bin/python3 /opt/pondtv/run.py
+WorkingDirectory=$APP_DIR
+ExecStart=$VENV_DIR/bin/python3 $APP_DIR/run.py
 Restart=always
 RestartSec=10
 
@@ -50,7 +52,7 @@ RestartSec=10
 WantedBy=multi-user.target
 EOF
 
-# 6. Enable and start the service
+# 7. Enable and start the service
 echo "--> Enabling and starting the PondTV service..."
 systemctl daemon-reload
 systemctl enable pondtv.service

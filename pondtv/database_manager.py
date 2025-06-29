@@ -30,8 +30,8 @@ class DatabaseManager:
                 log.warning("Database format is invalid or outdated. Triggering rescan.")
                 self.backup() # Backup the bad database for debugging
             
-            scanner = MediaScanner()
-            data = scanner.scan(media_path)
+            scanner = MediaScanner(media_path)
+            data = scanner.scan()
             self.save(data)
         
         return data if data is not None else {}

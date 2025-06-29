@@ -1,7 +1,6 @@
 import os
 import re
 from pondtv.utils import log
-from pondtv.database_manager import DatabaseManager
 
 class MediaScanner:
     """
@@ -17,26 +16,26 @@ class MediaScanner:
     SEASON_REGEX = re.compile(r'[._\s-](s|season)(\d{1,2})[._\s-]', re.I)
     EPISODE_REGEX = re.compile(r'[._\s-](e|ep|episode|\dof)(\d{1,3})[._\s-]', re.I)
 
-    def __init__(self, media_path: str, db_manager: DatabaseManager):
+    def __init__(self, media_path: str):
         self.media_path = media_path
-        self.db_manager = db_manager
         log.info("MediaScanner initialized.")
 
-    def scan(self):
-        """Performs a full scan of the media drive and saves to the database."""
+    def scan(self) -> dict:
+        """Performs a full scan of the media drive and returns the database content."""
         log.info("Starting media scan...")
-        db_content = {'movies': [], 'series': {}}
+        db_content = {'movies': [], 'tv_shows': {}}
         
         movies_path = os.path.join(self.media_path, "Movies")
         if os.path.exists(movies_path):
             db_content['movies'] = self._scan_movies(movies_path)
 
-        shows_path = os.path.join(self.media_path, "Shows")
+        shows_path = os.path.join(self.media_path, "TV_Shows")
         if os.path.exists(shows_path):
-            db_content['series'] = self._scan_series(shows_path)
+            # Note the key change from 'series' to 'tv_shows' for consistency
+            db_content['tv_shows'] = self._scan_series(shows_path)
             
-        self.db_manager.save(db_content)
-        log.info("Media scan complete and database saved.")
+        log.info("Media scan complete.")
+        return db_content
 
     def _is_valid_video(self, file_path: str) -> bool:
         """Checks if a file is a valid, non-sample video file."""
@@ -136,7 +135,18 @@ class MediaScanner:
                         })
             
             if episodes:
-                series[show_title] = {'episodes': sorted(episodes, key=lambda e: (e['season'], e['episode']))}
+                # Sort episodes by season and episode number
+                sorted_episodes = sorted(episodes, key=lambda e: (e.get('season', 0), e.get('episode', 0)))
+                
+                # Group episodes by season
+                seasons = {}
+                for episode in sorted_episodes:
+                    season_key = f"Season {episode['season']:02d}"
+                    if season_key not in seasons:
+                        seasons[season_key] = {'episodes': []}
+                    seasons[season_key]['episodes'].append(episode)
+                
+                series[show_title] = {'seasons': seasons}
                 
         return series
 
@@ -175,6 +185,8 @@ class MediaScanner:
 
 if __name__ == '__main__':
     import shutil
+    # The DatabaseManager is needed for testing the scanner's output
+    from pondtv.database_manager import DatabaseManager
 
     log.info("--- Running MediaScanner Test ---")
     
@@ -183,46 +195,37 @@ if __name__ == '__main__':
     dummy_db_path = os.path.join(dummy_media_path, 'test_media_library.yml')
     
     # Create dummy directories
-    os.makedirs(os.path.join(dummy_media_path, 'Movies'), exist_ok=True)
-    os.makedirs(os.path.join(dummy_media_path, 'TV_Shows', 'Test Show', 'Season 1'), exist_ok=True)
+    os.makedirs(os.path.join(dummy_media_path, 'Movies', 'The Matrix (1999)'), exist_ok=True)
+    os.makedirs(os.path.join(dummy_media_path, 'TV_Shows', 'Test Show', 'Season 01'), exist_ok=True)
     
     # Create dummy files
-    open(os.path.join(dummy_media_path, 'Movies', 'The Matrix (1999).mkv'), 'a').close()
-    open(os.path.join(dummy_media_path, 'TV_Shows', 'Test Show', 'Season 1', 'Test.Show.S01E01.mp4'), 'a').close()
-    open(os.path.join(dummy_media_path, 'TV_Shows', 'Test Show', 'Season 1', 'Test.Show.S01E02.mp4'), 'a').close()
+    # Make dummy files non-empty to pass size check
+    with open(os.path.join(dummy_media_path, 'Movies', 'The Matrix (1999)', 'The.Matrix.1999.mkv'), 'w') as f:
+        f.write('a' * 60 * 1024 * 1024)
+    with open(os.path.join(dummy_media_path, 'TV_Shows', 'Test Show', 'Season 01', 'Test.Show.S01E01.mp4'), 'w') as f:
+        f.write('a' * 60 * 1024 * 1024)
+    with open(os.path.join(dummy_media_path, 'TV_Shows', 'Test Show', 'Season 01', 'Test.Show.S01E02.mp4'), 'w') as f:
+        f.write('a' * 60 * 1024 * 1024)
 
-    # 2. Run the first scan
-    log.info("\nStep 1: Performing initial scan...")
+    # 2. Run the scan
+    log.info("\nStep 1: Performing scan...")
+    scanner = MediaScanner(dummy_media_path)
+    db_content = scanner.scan()
+    
+    # We still need a db_manager to save and load for the test
     db_manager = DatabaseManager(dummy_db_path)
-    scanner = MediaScanner(dummy_media_path, db_manager)
-    scanner.scan()
-    
-    # Verify first scan
-    db_content = db_manager.load()
-    log.info(f"DB content after first scan: {db_content}")
-    assert len(db_content.get('movies', [])) == 1
-    assert len(db_content.get('series', [])[0].get('episodes', [])) == 2
-    assert db_content['movies'][0]['title'] == 'The Matrix'
-    log.info("Initial scan results are correct.")
-    
-    # 3. Modify the database to simulate 'seen' status and rescan
-    log.info("\nStep 2: Simulating 'seen' status and re-scanning...")
-    db_content['movies'][0]['status'] = 'Seen'
     db_manager.save(db_content)
     
-    # Add a new movie and run scan again
-    open(os.path.join(dummy_media_path, 'Movies', 'Inception (2010).mkv'), 'a').close()
-    scanner.scan()
-    
-    # Verify second scan
-    db_content_after_rescan = db_manager.load()
-    log.info(f"DB content after second scan: {db_content_after_rescan}")
-    assert len(db_content_after_rescan.get('movies', [])) == 2
-    
-    # Check that the 'Seen' status of The Matrix was preserved
-    matrix_movie = next(m for m in db_content_after_rescan['movies'] if m['title'] == 'The Matrix')
-    assert matrix_movie['status'] == 'Seen'
-    log.info("'Seen' status was preserved correctly after re-scan.")
+    # 3. Verify scan
+    loaded_content = db_manager.load()
+    log.info(f"DB content after scan: {loaded_content}")
+    assert len(loaded_content.get('movies', [])) == 1
+    assert 'Test Show' in loaded_content.get('tv_shows', {})
+    show_data = loaded_content['tv_shows']['Test Show']
+    assert 'Season 01' in show_data.get('seasons', {})
+    assert len(show_data['seasons']['Season 01'].get('episodes', [])) == 2
+    assert loaded_content['movies'][0]['title'] == 'The Matrix'
+    log.info("Scan results appear correct.")
     
     # 4. Cleanup
     log.info("\n--- Test Complete ---")

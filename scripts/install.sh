@@ -52,8 +52,7 @@ sudo -u $PI_USER $VENV_DIR/bin/pip install -r requirements.txt
 echo "📁 Installing PondTV to $APP_DIR..."
 # Copy the application logic
 cp -r ./pondtv $APP_DIR/
-# Copy the runner and requirements for reference
-cp ./run.py $APP_DIR/
+# Copy the requirements for reference
 cp ./requirements.txt $APP_DIR/
 
 # --- Systemd Service ---

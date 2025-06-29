@@ -36,32 +36,13 @@ See the `examples/` folder for a working example you can copy.
 
 ## 🍀 Installation
 
-Choose your preferred installation method:
-
-### Option 1: Boot Payload (No SSH Required) ⭐
-
-**Perfect for headless setup without keyboard/monitor**
-
-1. **Flash Raspberry Pi OS Lite** to your SD card using Raspberry Pi Imager
-   - Before writing, click the gear icon to configure WiFi credentials
-2. **Download** the [boot payload](https://github.com/kdklv/pond/releases) and copy `firstrun.sh` to the boot partition
-3. **Insert SD card and power on** (internet required for first boot only)
-4. **Wait** for automatic installation and reboot (~5 minutes)
-5. **Plug in your USB drive** and enjoy!
-
-### Option 2: One-Command Install (SSH Required)
+The recommended installation method is to use the command below, which will download and run the installer automatically. This works for a fresh Raspberry Pi OS installation with SSH enabled.
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/kdklv/pond/main/scripts/install_one_command.sh | sudo bash
+curl -sSL https://raw.githubusercontent.com/kdklv/pond/main/scripts/install.sh | sudo bash
 ```
 
-### Option 3: Manual Install
-
-```bash
-git clone https://github.com/kdklv/pond.git
-cd pond
-sudo ./scripts/install_ssh.sh
-```
+For headless setup without a keyboard or monitor attached, you can pre-configure the Raspberry Pi OS with WiFi and place the installer script on the boot partition to have it run automatically on first boot. Please refer to the Raspberry Pi documentation for details on headless setup.
 
 ## 🌀 Controls
 

@@ -38,6 +38,10 @@ class PlaylistEngine:
         # Add unseen TV episodes, prioritizing the next episode in each series
         tv_shows = library.get('series', [])
         for series in tv_shows:
+            # Ensure series is a dictionary, not a string
+            if isinstance(series, str):
+                log.warning(f"Skipping series entry due to incompatible format (string instead of dictionary).")
+                continue
             episodes = series.get('episodes', [])
             # Ensure episodes is a list of dictionaries, not strings
             if episodes and isinstance(episodes[0], str):

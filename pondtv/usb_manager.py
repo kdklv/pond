@@ -42,21 +42,28 @@ class USBManager:
         """Scans block devices, mounts them, and checks for markers."""
         all_partitions = psutil.disk_partitions(all=True)
         mounted_devices = {p.device for p in psutil.disk_partitions(all=False)}
-        
-        # Exclude the root device from consideration
-        root_device = None
-        for p in psutil.disk_partitions(all=False):
-            if p.mountpoint == '/':
-                root_device = p.device
-                # Handle cases like /dev/mmcblk0p2 -> mmcblk0
-                root_device = '/dev/' + os.path.basename(root_device).rstrip('p0123456789')
-                break
+
+        # Determine the root filesystem's base device to avoid remounting it
+        root_partition = next((p for p in psutil.disk_partitions(all=False) if p.mountpoint == '/'), None)
+        root_base_device = None
+        if root_partition:
+            # e.g., /dev/mmcblk0p2 -> /dev/mmcblk0
+            root_base_device = '/dev/' + os.path.basename(root_partition.device).rstrip('p0123456789')
+            log.info(f"Identified root base device: {root_base_device}")
 
         for p in all_partitions:
-            if p.device in mounted_devices or (root_device and p.device.startswith(root_device)):
+            # CRITERIA FOR A VALID CANDIDATE:
+            # 1. Must be a real block device (e.g., /dev/sda1), not a pseudo-fs.
+            # 2. Must NOT be already mounted.
+            # 3. Must NOT be part of the root filesystem disk.
+            is_real_device = p.device.startswith('/dev/')
+            is_mounted = p.device in mounted_devices
+            is_root_fs_part = root_base_device and p.device.startswith(root_base_device)
+
+            if not is_real_device or is_mounted or is_root_fs_part:
                 continue
 
-            log.info(f"Found unmounted candidate: {p.device}")
+            log.info(f"Found unmounted candidate: {p.device} (fstype: {p.fstype})")
             mount_point = self._mount_partition(p.device)
             
             if mount_point and self._is_media_drive(mount_point):

@@ -57,7 +57,12 @@ class DatabaseManager:
                 return False
         
         # Check movies structure
-        for movie_title, movie_data in data.get('movies', {}).items():
+        movies_data = data.get('movies')
+        if not isinstance(movies_data, dict):
+            log.warning(f"DB validation failed: 'movies' should be a dict, but is {type(movies_data)}.")
+            return False
+
+        for movie_title, movie_data in movies_data.items():
             if not isinstance(movie_data, dict):
                 log.warning(f"DB validation failed for Movie '{movie_title}': movie data is not a dict.")
                 return False

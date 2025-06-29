@@ -66,13 +66,14 @@ POLKIT_RULES_DIR="/etc/polkit-1/rules.d"
 mkdir -p $POLKIT_RULES_DIR
 cp ./release/40-pondtv-udisks.rules "$POLKIT_RULES_DIR/"
 systemctl restart polkit
+systemctl restart udisks2.service
 
 # Create and install the systemd service
 cat > /etc/systemd/system/pondtv.service << EOF
 [Unit]
 Description=PondTV Media Player
-After=network.target polkit.service
-Wants=polkit.service
+After=network.target polkit.service udisks2.service
+Wants=polkit.service udisks2.service
 
 [Service]
 Type=simple

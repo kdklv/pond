@@ -20,7 +20,7 @@ echo "ℹ️  Installing for user: $PI_USER"
 # --- System Setup ---
 echo "📦 Installing system dependencies..."
 apt-get update -qq
-apt-get install -y mpv python3-pip git python3-venv libmpv-dev
+apt-get install -y mpv python3-pip git python3-venv libmpv-dev udisks2
 
 # --- App Setup ---
 APP_DIR="/opt/pondtv"

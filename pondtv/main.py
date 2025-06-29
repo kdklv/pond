@@ -90,6 +90,8 @@ class PondTVApp:
     def _cleanup_all_components(self):
         """Clean up all components during shutdown."""
         self._cleanup_media_components()
+        # Unmount drive if we mounted it
+        self.usb_manager.unmount_drive()
 
     def wait_for_media_drive(self) -> bool:
         """Wait for a valid media drive to be connected. Returns True if found, False if shutting down."""

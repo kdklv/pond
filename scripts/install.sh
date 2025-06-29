@@ -82,6 +82,7 @@ Wants=polkit.service udisks2.service
 Type=simple
 User=$PI_USER
 WorkingDirectory=$APP_DIR
+ExecStartPre=/bin/sleep 10
 ExecStart=$VENV_DIR/bin/python3 -m pondtv.main
 Restart=always
 RestartSec=10

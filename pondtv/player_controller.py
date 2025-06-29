@@ -1,11 +1,11 @@
 import mpv
 import os
 from .utils import log
+import threading
 
 class PlayerController:
-    """
-    Controls the MPV player instance, including playback, volume, and event handling.
-    """
+    """Handles the mpv player instance and playback controls."""
+
     def __init__(self, media_path_prefix: str = ""):
         """
         Initializes the PlayerController.
@@ -16,136 +16,73 @@ class PlayerController:
                                from the media drive root.
         """
         log.info("Initializing PlayerController...")
-        try:
-            self.player = mpv.MPV(
-                'osc=no',
-                'input-default-bindings=yes',
-                'input-vo-keyboard=yes',
-                'fullscreen=yes',
-                'keep-open=yes',
-                'idle=yes',
-                'ytdl=no',
-                log_handler=log.info
-            )
-        except Exception as e:
-            log.error(f"Failed to initialize MPV player: {e}")
-            raise
-
         self.media_path_prefix = media_path_prefix
-        self.current_item = None
-        self.on_end_file_callback = None
-        self.on_player_quit_callback = None
-
-        self.player.register_event_callback(self._event_handler)
+        # Configure mpv player
+        self.player = mpv.MPV(
+            ytdl=False,
+            input_default_bindings=True,
+            input_vo_keyboard=True,
+            fullscreen=True,
+            # Add more mpv options here as needed for a kiosk-like experience
+            # e.g., --no-border, --no-window-title
+        )
+        self._is_playing = False
         self.player.observe_property('playback-time', self._time_pos_handler)
+        self.player.register_event_callback(self._handle_mpv_event)
         log.info("PlayerController initialized.")
 
     @property
     def is_playing(self):
         """Returns True if the player is currently active."""
-        return self.current_item is not None
+        return self._is_playing
+
+    def _handle_mpv_event(self, event):
+        """Dispatches incoming events from the mpv player instance."""
+        if event.get('event_id') == 'end-file':
+            self._end_file_handler(event)
 
     def _time_pos_handler(self, name, value):
         """Handles time position updates for resume functionality."""
-        if self.current_item and value:
-            self.current_item['resume_position'] = value
-
-    def _event_handler(self, event):
-        """
-        Generic event handler to dispatch MPV events.
-        It's called from a separate thread by the mpv core, so be careful.
-        """
-        event_name = event.get('event')
-        if not event_name:
-            return
-
-        if event_name == 'end-file':
-            self._end_file_handler(event)
-        elif event_name == 'shutdown':
-            self._shutdown_handler()
-
-    def _shutdown_handler(self):
-        """
-        Handles the player shutdown event.
-        """
-        log.info("Player has shut down.")
-        if self.on_player_quit_callback:
-            self.on_player_quit_callback()
+        # This can be used later if needed
+        pass
 
     def _end_file_handler(self, event):
-        """
-        Handles the end-of-file event from MPV.
-        """
-        reason = event.get('reason')
-        log.info(f"End of file event, reason: {reason}")
-        if self.on_end_file_callback and reason == 'eof':
-            if self.current_item:
-                self.current_item['status'] = 'Seen'
-                self.current_item['resume_position'] = 0
-            self.on_end_file_callback()
+        """Callback for when a file finishes playing."""
+        log.info("File playback finished (end-file event).")
+        self._is_playing = False
 
     def play(self, media_item: dict, start_pos: int = 0):
         """
-        Plays a media file.
+        Plays a given media item.
+
+        Args:
+            media_item: A dictionary containing media details, including 'filepath'.
+            start_pos: The time in seconds to start playback from.
         """
-        if not media_item or 'file_path' not in media_item:
-            log.error("Invalid media item provided to play.")
+        filepath = media_item.get('filepath')
+        if not filepath:
+            log.error("Media item has no 'filepath' to play.")
             return
 
-        full_path = os.path.join(self.media_path_prefix, media_item['file_path'])
-        log.info(f"Playing '{full_path}' at start_pos {start_pos}")
+        full_path = os.path.join(self.media_path_prefix, filepath)
+        log.info(f"Playing media: {full_path} from {start_pos}s")
 
         try:
-            self.current_item = media_item
+            self._is_playing = True
             self.player.play(full_path, start=start_pos)
+            self.player.wait_for_playback()
+            # Playback has finished naturally or was stopped.
+            # The _end_file_handler will set _is_playing to False.
+            log.info(f"Finished playing: {filepath}")
         except Exception as e:
             log.error(f"Error playing {full_path}: {e}")
-            self.current_item = None
-
-    def register_on_end_file(self, callback):
-        self.on_end_file_callback = callback
-
-    def register_on_quit(self, callback):
-        self.on_player_quit_callback = callback
+            self._is_playing = False
 
     def shutdown(self):
         """Stops playback and terminates the player."""
         log.info("Shutting down player.")
-        self.current_item = None
-        if hasattr(self, 'player') and self.player:
-            self.player.terminate()
-
-    def toggle_pause(self):
-        """Toggles pause/resume state."""
-        log.info("Toggling pause.")
-        self.player.cycle('pause')
-
-    def seek_forward(self):
-        log.info("Seeking forward.")
-        self.player.seek(10, 'relative')
-
-    def seek_backward(self):
-        log.info("Seeking backward.")
-        self.player.seek(-10, 'relative')
-
-    def volume_up(self):
-        log.info("Volume up.")
-        self.player.volume_up()
-
-    def volume_down(self):
-        log.info("Volume down.")
-        self.player.volume_down()
-
-    def restart_video(self):
-        log.info("Restarting video.")
-        self.player.seek(0, 'absolute')
-
-    def toggle_mute(self):
-        log.info("Toggling mute.")
-        self.player.cycle('mute')
-
-    def get_current_item(self):
-        return self.current_item
+        self._is_playing = False
+        self.player.terminate()
 
 if __name__ == '__main__':
     import time

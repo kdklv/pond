@@ -1,6 +1,7 @@
 import os
 import yaml
 from pondtv.utils import log
+from pondtv.media_scanner import MediaScanner
 
 class DatabaseManager:
     """Handles atomic loading and saving of the YAML database file."""
@@ -14,6 +15,58 @@ class DatabaseManager:
         """
         self.db_path = db_path
         log.info(f"DatabaseManager initialized for path: {self.db_path}")
+
+    def load_and_validate(self, media_path: str) -> dict:
+        """
+        Loads the database, validates its structure, and triggers a rescan if invalid.
+        """
+        log.info(f"Attempting to load and validate database from {self.db_path}")
+        data = self.load()
+        
+        if not data or not self._is_valid(data):
+            if not data:
+                log.info("Database is empty, triggering initial scan.")
+            else:
+                log.warning("Database format is invalid or outdated. Triggering rescan.")
+                self.backup() # Backup the bad database for debugging
+            
+            scanner = MediaScanner()
+            data = scanner.scan(media_path)
+            self.save(data)
+        
+        return data if data is not None else {}
+
+    def _is_valid(self, data: dict) -> bool:
+        """
+        Performs a basic validation of the database structure.
+        """
+        if not isinstance(data, dict):
+            log.warning("DB validation failed: Root is not a dictionary.")
+            return False
+        if 'movies' not in data or 'tv_shows' not in data:
+            log.warning("DB validation failed: Missing 'movies' or 'tv_shows' keys.")
+            return False
+        
+        # Check tv_shows structure
+        for series_title, series_data in data.get('tv_shows', {}).items():
+            if not isinstance(series_data, dict):
+                log.warning(f"DB validation failed for TV Show '{series_title}': series data is not a dict.")
+                return False
+            if 'seasons' not in series_data:
+                log.warning(f"DB validation failed for TV Show '{series_title}': missing 'seasons' key.")
+                return False
+        
+        # Check movies structure
+        for movie_title, movie_data in data.get('movies', {}).items():
+            if not isinstance(movie_data, dict):
+                log.warning(f"DB validation failed for Movie '{movie_title}': movie data is not a dict.")
+                return False
+            if 'filepath' not in movie_data:
+                log.warning(f"DB validation failed for Movie '{movie_title}': missing 'filepath' key.")
+                return False
+
+        log.info("Database validation successful.")
+        return True
 
     def load(self) -> dict:
         """

@@ -25,7 +25,7 @@ class MediaScanner:
     def scan(self):
         """Performs a full scan of the media drive and saves to the database."""
         log.info("Starting media scan...")
-        db_content = {'movies': [], 'series': []}
+        db_content = {'movies': [], 'series': {}}
         
         movies_path = os.path.join(self.media_path, "Movies")
         if os.path.exists(movies_path):
@@ -98,15 +98,15 @@ class MediaScanner:
                 movies.append({
                     'title': title,
                     'year': year,
-                    'file_path': os.path.relpath(main_video_file, self.media_path),
+                    'filepath': os.path.relpath(main_video_file, self.media_path),
                     'status': 'Unseen',
                     'resume_position': 0
                 })
         return movies
 
-    def _scan_series(self, shows_path: str) -> list:
+    def _scan_series(self, shows_path: str) -> dict:
         """Scans the 'Shows' directory."""
-        series_list = []
+        series = {}
         log.info(f"Scanning for TV series in: {shows_path}")
 
         for show_dir_name in os.listdir(shows_path):
@@ -130,20 +130,17 @@ class MediaScanner:
                         episodes.append({
                             'season': season_num,
                             'episode': episode_num,
-                            'file_path': os.path.relpath(file_path, self.media_path),
+                            'filepath': os.path.relpath(file_path, self.media_path),
                             'status': 'Unseen',
                             'resume_position': 0
                         })
             
             if episodes:
-                series_list.append({
-                    'series_name': show_title,
-                    'episodes': sorted(episodes, key=lambda e: (e['season'], e['episode']))
-                })
+                series[show_title] = {'episodes': sorted(episodes, key=lambda e: (e['season'], e['episode']))}
                 
-        return series_list
+        return series
 
-    def _parse_episode_info(self, file_path: str, root_path: str, show_path: str) -> tuple[int | None, int | None]:
+    def _parse_episode_info(self, file_path: str, root_path: str, show_path: str) -> tuple[int, int | None]:
         """Attempts to extract season and episode number from file/path."""
         filename = os.path.basename(file_path)
         

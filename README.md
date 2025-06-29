@@ -5,9 +5,9 @@
   <img src="logo.png" alt="PondTV Logo" width="256"/>
 </p>
 
-> A calm, offline alternative to streaming services—content flows from your personal collection, not an endless stream.
+> A calm, offline alternative to streaming services—content flows from your personal collection. Just power on and watch.
 
-PondTV turns your Raspberry Pi into a plug-and-play TV channel for your media. Think of it as a dumb-TV, just like dumb-phones: no apps, no menus, just simple playback from your USB drive. Power on and watch—effortless.
+PondTV turns your Raspberry Pi into a plug-and-play TV channel for your media. Think of it as a dumb-TV, just like dumb-phones: no apps, no menus, just simple playback from your USB drive. 
 
 ## 🐸 Features
 

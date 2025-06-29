@@ -1,4 +1,5 @@
 pynput
 pyyaml
 psutil
-python-mpv 
+python-mpv
+pydbus 

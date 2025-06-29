@@ -1,133 +1,106 @@
 import os
-import psutil
-import subprocess
-import re
-import json
+import time
+from pydbus import SystemBus
 from pondtv.utils import log
 
 class USBManager:
     """
-    Handles the detection, mounting, and validation of the PondTV media drive.
+    Handles media drive detection and mounting via direct D-Bus communication
+    with the UDisks2 service.
     """
-    
     def __init__(self, markers: list = ["Movies", "Shows"]):
         self.markers = markers
-        self.mounted_by_app = None  # Store the device we mounted
-        log.info(f"USBManager initialized, looking for markers: {self.markers}")
+        self.bus = SystemBus()
+        self.udisks = self.bus.get('org.freedesktop.UDisks2')
+        self.mounted_by_app = None
+        log.info("USBManager initialized using D-Bus.")
 
     def find_media_drive(self) -> str | None:
-        """
-        Finds the media drive. If already mounted, returns the path. 
-        If not mounted, attempts to mount it.
-        """
-        # 1. Check already mounted drives
-        log.info("Scanning for already mounted media drives...")
-        partitions = psutil.disk_partitions(all=False) # all=False is default
-        for p in partitions:
-            if self._is_media_drive(p.mountpoint):
-                log.info(f"Found existing media drive at {p.mountpoint}")
-                return p.mountpoint
+        """Finds the media drive, mounting it if necessary."""
+        log.info("Scanning for media drive via D-Bus...")
+        try:
+            objects = self.udisks.GetManagedObjects()
+            for path, interfaces in objects.items():
+                # A block device with a partition table is a physical disk.
+                if 'org.freedesktop.UDisks2.PartitionTable' in interfaces:
+                    # Now check its partitions.
+                    for part_path, part_interfaces in objects.items():
+                        partition = part_interfaces.get('org.freedesktop.UDisks2.Partition')
+                        if partition and partition['Table'] == path:
+                            # This partition belongs to our current disk.
+                            drive = part_interfaces.get('org.freedesktop.UDisks2.Drive')
+                            # Ignore the OS drive (e.g., SD card reader)
+                            if drive and drive.get('Id') and 'mmc' in drive['Id']:
+                                continue
+                            
+                            # Check if it's already mounted
+                            mount_points = self._get_mount_points(part_interfaces)
+                            if mount_points:
+                                log.info(f"Found already mounted candidate: {part_path}")
+                                if self._is_media_drive(mount_points[0]):
+                                    return mount_points[0]
+                            else:
+                                # Not mounted, so let's try to mount it.
+                                log.info(f"Found unmounted candidate: {part_path}")
+                                mount_point = self._mount_partition(part_path)
+                                if mount_point and self._is_media_drive(mount_point):
+                                    self.mounted_by_app = part_path
+                                    return mount_point
+                                elif mount_point:
+                                    self._unmount_partition(part_path)
+        except Exception as e:
+            log.error(f"Error communicating with D-Bus: {e}", exc_info=True)
+        return None
 
-        # 2. If not found, try to find and mount an unmounted one
-        log.info("No mounted media drive found. Scanning for unmounted candidates...")
-        return self._find_and_mount_candidate()
+    def _get_mount_points(self, interfaces: dict) -> list[str]:
+        """Gets mount points from the Filesystem interface."""
+        fs = interfaces.get('org.freedesktop.UDisks2.Filesystem')
+        if fs and fs['MountPoints']:
+            # The paths are returned as byte arrays.
+            return [path.decode('utf-8') for path in fs['MountPoints']]
+        return []
 
     def _is_media_drive(self, mount_path: str) -> bool:
-        """Checks if a given path contains our media markers."""
+        """Checks if a mount path contains our media markers."""
         for marker in self.markers:
             if os.path.exists(os.path.join(mount_path, marker)):
+                log.info(f"Found media marker '{marker}' at {mount_path}")
                 return True
         return False
 
-    def _find_and_mount_candidate(self) -> str | None:
-        """Scans block devices using lsblk, mounts them, and checks for markers."""
+    def _mount_partition(self, object_path: str) -> str | None:
+        """Mounts a partition using its D-Bus object path."""
         try:
-            cmd = ["lsblk", "--json", "-o", "NAME,TYPE,MOUNTPOINTS"]
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-            data = json.loads(result.stdout)
+            fs_interface = self.bus.get('org.freedesktop.UDisks2', object_path)['org.freedesktop.UDisks2.Filesystem']
+            # The third argument is a dict of mount options. Empty means default.
+            mount_path = fs_interface.Mount({})
+            log.info(f"Successfully mounted {object_path} at {mount_path}")
+            return mount_path
+        except Exception as e:
+            log.error(f"Failed to mount {object_path} via D-Bus: {e}")
+            return None
 
-            root_device_name = None
-            for device in data.get('blockdevices', []):
-                if device.get('mountpoints') == ['/']:
-                    root_device_name = device['name']
-                    break
-                if 'children' in device:
-                    for part in device.get('children', []):
-                        if part.get('mountpoints') == ['/']:
-                            root_device_name = device['name']
-                            break
-                    if root_device_name:
-                        break
-            
-            if root_device_name:
-                log.info(f"Identified root block device: {root_device_name}")
-
-            for device in data.get('blockdevices', []):
-                if device.get('name') == root_device_name:
-                    continue
-
-                for part in device.get('children', []):
-                    # A valid candidate is a partition with no mountpoints.
-                    # lsblk shows this as a list containing a single null value.
-                    if part.get('type') == 'part' and part.get('mountpoints') == [None]:
-                        device_path = f"/dev/{part['name']}"
-                        log.info(f"Found unmounted candidate: {device_path}")
-                        mount_point = self._mount_partition(device_path)
-                        
-                        if mount_point and self._is_media_drive(mount_point):
-                            log.info(f"Successfully mounted media drive at {mount_point}")
-                            self.mounted_by_app = device_path
-                            return mount_point
-                        elif mount_point:
-                            log.info(f"Mounted {device_path}, but not a media drive. Unmounting.")
-                            self._unmount_partition(device_path)
-        
-        except (subprocess.CalledProcessError, FileNotFoundError, json.JSONDecodeError) as e:
-            log.error(f"Failed to find or mount candidate using lsblk: {e}")
-
-        return None
-
-    def _mount_partition(self, device_path: str) -> str | None:
-        """Mounts a partition using udisksctl."""
+    def _unmount_partition(self, object_path: str):
+        """Unmounts a partition using its D-Bus object path."""
         try:
-            cmd = ["udisksctl", "mount", "--block-device", device_path, "--no-user-interaction"]
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=15)
-            # Output is typically: "Mounted /dev/sdb1 at /media/user/MEDIA_NAME."
-            match = re.search(r'at\s(/media/.*)\.', result.stdout)
-            if match:
-                return match.group(1).strip()
-            log.warning(f"Could not parse mount point from udisksctl output: {result.stdout}")
-            return None
-        except subprocess.TimeoutExpired as e:
-            log.error(f"Mount command for {device_path} timed out. Stderr: {e.stderr}")
-            return None
-        except subprocess.CalledProcessError as e:
-            log.error(f"Failed to mount {device_path} with udisksctl. Stderr: {e.stderr}")
-            return None
-        except FileNotFoundError:
-            log.error("udisksctl command not found. Please ensure udisks2 is installed.")
-            return None
+            fs_interface = self.bus.get('org.freedesktop.UDisks2', object_path)['org.freedesktop.UDisks2.Filesystem']
+            fs_interface.Unmount({})
+            log.info(f"Successfully unmounted {object_path}")
+        except Exception as e:
+            log.error(f"Failed to unmount {object_path} via D-Bus: {e}")
 
-    def _unmount_partition(self, device_path: str):
-        """Unmounts a partition using udisksctl."""
-        try:
-            cmd = ["udisksctl", "unmount", "--block-device", device_path, "--no-user-interaction"]
-            subprocess.run(cmd, capture_output=True, text=True, check=True)
-            log.info(f"Successfully unmounted {device_path}.")
-        except (subprocess.CalledProcessError, FileNotFoundError) as e:
-            log.error(f"Failed to unmount {device_path} with udisksctl: {e}")
-            
     def unmount_drive(self):
-        """Unmounts the drive that was mounted by this manager instance."""
+        """Unmounts the drive that was mounted by this manager."""
         if self.mounted_by_app:
-            log.info(f"Unmounting the drive we mounted: {self.mounted_by_app}")
+            log.info(f"Unmounting D-Bus managed drive: {self.mounted_by_app}")
             self._unmount_partition(self.mounted_by_app)
             self.mounted_by_app = None
 
     def is_drive_still_connected(self, path: str) -> bool:
-        if not path or not os.path.exists(path):
-            return False
-        return path in [p.mountpoint for p in psutil.disk_partitions()]
+        """Checks if a drive is still connected by checking its mount point."""
+        # A simple os.path check is sufficient with D-Bus, as udisks
+        # cleans up mount points on disconnect.
+        return os.path.exists(path)
 
 if __name__ == '__main__':
     # Test script for the USBManager

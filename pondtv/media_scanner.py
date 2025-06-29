@@ -65,9 +65,9 @@ class MediaScanner:
         # Capitalize and clean up whitespace
         return ' '.join(word.capitalize() for word in name.split()).strip()
 
-    def _scan_movies(self, movies_path: str) -> list:
+    def _scan_movies(self, movies_path: str) -> dict:
         """Scans the 'Movies' directory."""
-        movies = []
+        movies = {}
         log.info(f"Scanning for movies in: {movies_path}")
         
         for movie_dir_name in os.listdir(movies_path):
@@ -94,13 +94,12 @@ class MediaScanner:
                 year = int(year_match.group(1)) if year_match else None
                 title = self._clean_name(movie_dir_name)
 
-                movies.append({
-                    'title': title,
+                movies[title] = {
                     'year': year,
                     'filepath': os.path.relpath(main_video_file, self.media_path),
                     'status': 'Unseen',
                     'resume_position': 0
-                })
+                }
         return movies
 
     def _scan_series(self, shows_path: str) -> dict:

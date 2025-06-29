@@ -55,12 +55,21 @@ cp -r ./pondtv $APP_DIR/
 # Copy the requirements for reference
 cp ./requirements.txt $APP_DIR/
 
-# --- Systemd Service ---
-echo "⚙️  Creating systemd service..."
+# --- Permissions and Services ---
+echo "⚙️  Configuring permissions and systemd service..."
+
+# Install polkit rule for allowing mounting
+POLKIT_DIR="/etc/polkit-1/localauthority/50-local.d"
+mkdir -p $POLKIT_DIR
+cp ./release/pondtv.pkla "$POLKIT_DIR/60-pondtv-mount-policy.pkla"
+systemctl restart polkit
+
+# Create and install the systemd service
 cat > /etc/systemd/system/pondtv.service << EOF
 [Unit]
 Description=PondTV Media Player
-After=network.target
+After=network.target polkit.service
+Wants=polkit.service
 
 [Service]
 Type=simple

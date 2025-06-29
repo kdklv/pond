@@ -38,6 +38,11 @@ class PlaylistEngine:
 
         # Process series
         for series in self.db_content.get('series', []):
+            # Add a check to ensure series is a dictionary before processing
+            if not isinstance(series, dict):
+                log.warning(f"Skipping malformed TV show entry in database: {series}")
+                continue
+
             # Sort episodes to find the next unseen one
             episodes = sorted(series.get('episodes', []), key=lambda e: (e.get('season', 0), e.get('episode', 0)))
             

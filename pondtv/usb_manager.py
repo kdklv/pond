@@ -2,6 +2,7 @@ import os
 import psutil
 import subprocess
 import re
+import json
 from pondtv.utils import log
 
 class USBManager:
@@ -39,42 +40,51 @@ class USBManager:
         return False
 
     def _find_and_mount_candidate(self) -> str | None:
-        """Scans block devices, mounts them, and checks for markers."""
-        all_partitions = psutil.disk_partitions(all=True)
-        mounted_devices = {p.device for p in psutil.disk_partitions(all=False)}
+        """Scans block devices using lsblk, mounts them, and checks for markers."""
+        try:
+            cmd = ["lsblk", "--json", "-o", "NAME,TYPE,MOUNTPOINTS"]
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            data = json.loads(result.stdout)
 
-        # Determine the root filesystem's base device to avoid remounting it
-        root_partition = next((p for p in psutil.disk_partitions(all=False) if p.mountpoint == '/'), None)
-        root_base_device = None
-        if root_partition:
-            # e.g., /dev/mmcblk0p2 -> /dev/mmcblk0
-            root_base_device = '/dev/' + os.path.basename(root_partition.device).rstrip('p0123456789')
-            log.info(f"Identified root base device: {root_base_device}")
-
-        for p in all_partitions:
-            # CRITERIA FOR A VALID CANDIDATE:
-            # 1. Must be a real block device (e.g., /dev/sda1), not a pseudo-fs.
-            # 2. Must NOT be already mounted.
-            # 3. Must NOT be part of the root filesystem disk.
-            is_real_device = p.device.startswith('/dev/')
-            is_mounted = p.device in mounted_devices
-            is_root_fs_part = root_base_device and p.device.startswith(root_base_device)
-
-            if not is_real_device or is_mounted or is_root_fs_part:
-                continue
-
-            log.info(f"Found unmounted candidate: {p.device} (fstype: {p.fstype})")
-            mount_point = self._mount_partition(p.device)
+            root_device_name = None
+            for device in data.get('blockdevices', []):
+                if device.get('mountpoints') == ['/']:
+                    root_device_name = device['name']
+                    break
+                if 'children' in device:
+                    for part in device.get('children', []):
+                        if part.get('mountpoints') == ['/']:
+                            root_device_name = device['name']
+                            break
+                    if root_device_name:
+                        break
             
-            if mount_point and self._is_media_drive(mount_point):
-                log.info(f"Successfully mounted media drive at {mount_point}")
-                self.mounted_by_app = p.device
-                return mount_point
-            elif mount_point:
-                # It mounted but wasn't our drive, so unmount it
-                log.info(f"Mounted {p.device} at {mount_point}, but it's not a media drive. Unmounting.")
-                self._unmount_partition(p.device)
+            if root_device_name:
+                log.info(f"Identified root block device: {root_device_name}")
+
+            for device in data.get('blockdevices', []):
+                if device.get('name') == root_device_name:
+                    continue
+
+                for part in device.get('children', []):
+                    # A valid candidate is a partition with no mountpoints.
+                    # lsblk shows this as a list containing a single null value.
+                    if part.get('type') == 'part' and part.get('mountpoints') == [None]:
+                        device_path = f"/dev/{part['name']}"
+                        log.info(f"Found unmounted candidate: {device_path}")
+                        mount_point = self._mount_partition(device_path)
+                        
+                        if mount_point and self._is_media_drive(mount_point):
+                            log.info(f"Successfully mounted media drive at {mount_point}")
+                            self.mounted_by_app = device_path
+                            return mount_point
+                        elif mount_point:
+                            log.info(f"Mounted {device_path}, but not a media drive. Unmounting.")
+                            self._unmount_partition(device_path)
         
+        except (subprocess.CalledProcessError, FileNotFoundError, json.JSONDecodeError) as e:
+            log.error(f"Failed to find or mount candidate using lsblk: {e}")
+
         return None
 
     def _mount_partition(self, device_path: str) -> str | None:

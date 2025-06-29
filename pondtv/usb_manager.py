@@ -5,16 +5,16 @@ from pondtv.utils import log
 class USBManager:
     """Handles the detection and validation of the PondTV media drive."""
     
-    def __init__(self, marker: str = "Movies"):
+    def __init__(self, markers: list = ["Movies", "Shows"]):
         """
         Initializes the USBManager.
         
         Args:
-            marker: A file or directory name to look for to identify the correct
-                    media drive. Defaults to "Movies".
+            markers: A list of file or directory names to look for to identify
+                     the correct media drive.
         """
-        self.marker = marker
-        log.info(f"USBManager initialized, looking for marker: '{self.marker}'")
+        self.markers = markers
+        log.info(f"USBManager initialized, looking for markers: {self.markers}")
 
     def find_media_drive(self) -> str | None:
         """
@@ -37,10 +37,11 @@ class USBManager:
                 continue
 
             log.info(f"Checking potential drive at {p.mountpoint}...")
-            marker_path = os.path.join(p.mountpoint, self.marker)
-            if os.path.exists(marker_path):
-                log.info(f"PondTV media drive found at: {p.mountpoint}")
-                return p.mountpoint
+            for marker in self.markers:
+                marker_path = os.path.join(p.mountpoint, marker)
+                if os.path.exists(marker_path):
+                    log.info(f"PondTV media drive found at: {p.mountpoint} (marker: '{marker}')")
+                    return p.mountpoint
                 
         log.warning("No PondTV media drive found.")
         return None
@@ -72,6 +73,6 @@ if __name__ == '__main__':
         log.info(f"Success! Media drive found: {media_drive_path}")
     else:
         log.warning("Test complete, but no media drive was found.")
-        log.info("To test properly, connect a USB drive containing a 'Movies' directory.")
+        log.info("To test properly, connect a USB drive containing a 'Movies' or 'Shows' directory.")
         
     log.info("--- Test Complete ---") 

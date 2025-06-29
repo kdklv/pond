@@ -4,94 +4,173 @@ from pondtv.utils import log
 from pondtv.database_manager import DatabaseManager
 
 class MediaScanner:
-    """Scans the media drive and builds/updates the YAML database."""
+    """
+    Scans a media drive to find and catalog movies and TV series,
+    handling complex and messy file structures.
+    """
+    VIDEO_EXTENSIONS = {".mkv", ".mp4", ".avi", ".mov"}
+    MIN_FILE_SIZE_MB = 50  # Files smaller than this are likely samples
+    YEAR_REGEX = re.compile(r'\(?(\d{4})\)?')
+    SEASON_EPISODE_REGEX = re.compile(
+        r'[._\s-](s|season)?(\d{1,2})[ex](\d{1,3})[._\s-]', re.I
+    )
+    SEASON_REGEX = re.compile(r'[._\s-](s|season)(\d{1,2})[._\s-]', re.I)
+    EPISODE_REGEX = re.compile(r'[._\s-](e|ep|episode|\dof)(\d{1,3})[._\s-]', re.I)
 
-    def __init__(self, root_path: str, db_manager: DatabaseManager):
-        """
-        Initializes the MediaScanner.
-
-        Args:
-            root_path: The root path of the media drive to scan.
-            db_manager: An instance of DatabaseManager to handle DB operations.
-        """
-        self.root_path = root_path
+    def __init__(self, media_path: str, db_manager: DatabaseManager):
+        self.media_path = media_path
         self.db_manager = db_manager
-        self.video_formats = ('.mp4', '.mkv', '.avi', '.mov', '.m4v')
-        self.movie_regex = re.compile(r'(.+?)\s*\((\d{4})\)')
-        self.series_regex = re.compile(r'.*?s(\d{1,2})e(\d{1,2})', re.IGNORECASE)
-        log.info(f"MediaScanner initialized for path: {self.root_path}")
+        log.info("MediaScanner initialized.")
 
     def scan(self):
-        """
-        Performs a full scan of the media directories and updates the database.
-        It preserves the 'status' and 'resume_position' of existing entries.
-        """
+        """Performs a full scan of the media drive and saves to the database."""
         log.info("Starting media scan...")
+        db_content = {'movies': [], 'series': {}}
         
-        # Load the existing database to preserve state
-        old_db_data = self.db_manager.load()
-        old_movies = {m['filepath']: m for m in old_db_data.get('movies', [])}
-        old_series_episodes = {e['filepath']: e for s in old_db_data.get('series', []) for e in s.get('episodes', [])}
+        movies_path = os.path.join(self.media_path, "Movies")
+        if os.path.exists(movies_path):
+            db_content['movies'] = self._scan_movies(movies_path)
 
-        new_db_data = {'movies': [], 'series': {}}
+        shows_path = os.path.join(self.media_path, "Shows")
+        if os.path.exists(shows_path):
+            db_content['series'] = self._scan_series(shows_path)
+            
+        self.db_manager.save(db_content)
+        log.info("Media scan complete and database saved.")
 
-        # Scan Movies
-        movies_path = os.path.join(self.root_path, 'Movies')
-        if os.path.isdir(movies_path):
-            for filename in os.listdir(movies_path):
-                if filename.lower().endswith(self.video_formats):
-                    filepath = os.path.join('Movies', filename)
-                    movie_data = old_movies.get(filepath, {})
+    def _is_valid_video(self, file_path: str) -> bool:
+        """Checks if a file is a valid, non-sample video file."""
+        if not any(file_path.lower().endswith(ext) for ext in self.VIDEO_EXTENSIONS):
+            return False
+        
+        # Ignore samples, trailers, etc.
+        if re.search(r'[._\s-](sample|trailer|extra)[._\s-]', file_path, re.I):
+            return False
+            
+        try:
+            size_mb = os.path.getsize(file_path) / (1024 * 1024)
+            if size_mb < self.MIN_FILE_SIZE_MB:
+                log.info(f"Ignoring small file: {file_path} ({size_mb:.2f}MB)")
+                return False
+        except OSError:
+            return False # File might not be accessible
+            
+        return True
+
+    def _clean_name(self, name: str) -> str:
+        """Cleans up a file or folder name for display."""
+        name = self.YEAR_REGEX.sub('', name) # Remove year
+        # Remove common release tags
+        name = re.sub(r'\[.*?\]|\(.*?\)|1080p|720p|bluray|webrip|h264|x265|aac', '', name, flags=re.I)
+        name = name.replace('.', ' ').replace('_', ' ').strip()
+        # Capitalize and clean up whitespace
+        return ' '.join(word.capitalize() for word in name.split()).strip()
+
+    def _scan_movies(self, movies_path: str) -> list:
+        """Scans the 'Movies' directory."""
+        movies = []
+        log.info(f"Scanning for movies in: {movies_path}")
+        
+        for movie_dir_name in os.listdir(movies_path):
+            movie_dir_path = os.path.join(movies_path, movie_dir_name)
+            if not os.path.isdir(movie_dir_path):
+                continue
+
+            log.info(f"Processing movie folder: {movie_dir_name}")
+            
+            # Find the largest video file in the directory tree
+            main_video_file = None
+            max_size = 0
+            for root, _, files in os.walk(movie_dir_path):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    if self._is_valid_video(file_path):
+                        size = os.path.getsize(file_path)
+                        if size > max_size:
+                            max_size = size
+                            main_video_file = file_path
+            
+            if main_video_file:
+                year_match = self.YEAR_REGEX.search(movie_dir_name)
+                year = int(year_match.group(1)) if year_match else None
+                title = self._clean_name(movie_dir_name)
+
+                movies.append({
+                    'title': title,
+                    'year': year,
+                    'filepath': os.path.relpath(main_video_file, self.media_path),
+                    'status': 'Unseen',
+                    'resume_position': 0
+                })
+        return movies
+
+    def _scan_series(self, shows_path: str) -> dict:
+        """Scans the 'Shows' directory."""
+        series = {}
+        log.info(f"Scanning for TV series in: {shows_path}")
+
+        for show_dir_name in os.listdir(shows_path):
+            show_dir_path = os.path.join(shows_path, show_dir_name)
+            if not os.path.isdir(show_dir_path):
+                continue
+                
+            show_title = self._clean_name(show_dir_name)
+            log.info(f"Processing show: {show_title} ({show_dir_name})")
+            
+            episodes = []
+            for root, _, files in os.walk(show_dir_path):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    if not self._is_valid_video(file_path):
+                        continue
+
+                    season_num, episode_num = self._parse_episode_info(file_path, root, show_dir_path)
                     
-                    match = self.movie_regex.match(os.path.splitext(filename)[0])
-                    if match:
-                        title, year = match.groups()
-                        movie_data.update({
-                            'filepath': filepath,
-                            'title': title.strip(),
-                            'year': int(year),
-                            'status': movie_data.get('status', 'Unseen'),
-                            'resume_position': movie_data.get('resume_position', None)
+                    if episode_num is not None:
+                        episodes.append({
+                            'season': season_num,
+                            'episode': episode_num,
+                            'filepath': os.path.relpath(file_path, self.media_path),
+                            'status': 'Unseen',
+                            'resume_position': 0
                         })
-                        new_db_data['movies'].append(movie_data)
+            
+            if episodes:
+                series[show_title] = {'episodes': sorted(episodes, key=lambda e: (e['season'], e['episode']))}
+                
+        return series
 
-        # Scan TV Shows
-        shows_path = os.path.join(self.root_path, 'TV_Shows')
-        if os.path.isdir(shows_path):
-            for series_name in os.listdir(shows_path):
-                series_path = os.path.join(shows_path, series_name)
-                if os.path.isdir(series_path):
-                    for season_folder in os.listdir(series_path):
-                        season_path = os.path.join(series_path, season_folder)
-                        if os.path.isdir(season_path):
-                            for episode_filename in os.listdir(season_path):
-                                if episode_filename.lower().endswith(self.video_formats):
-                                    filepath = os.path.join('TV_Shows', series_name, season_folder, episode_filename)
-                                    episode_data = old_series_episodes.get(filepath, {})
-                                    
-                                    match = self.series_regex.match(episode_filename)
-                                    if match:
-                                        season_num, episode_num = match.groups()
-                                        
-                                        if series_name not in new_db_data['series']:
-                                            new_db_data['series'][series_name] = []
-
-                                        episode_data.update({
-                                            'filepath': filepath,
-                                            'season': int(season_num),
-                                            'episode': int(episode_num),
-                                            'status': episode_data.get('status', 'Unseen'),
-                                            'resume_position': episode_data.get('resume_position', None)
-                                        })
-                                        new_db_data['series'][series_name].append(episode_data)
+    def _parse_episode_info(self, file_path: str, root_path: str, show_path: str) -> tuple[int, int | None]:
+        """Attempts to extract season and episode number from file/path."""
+        filename = os.path.basename(file_path)
         
-        # Convert series dict to list of dicts for final structure
-        final_series_list = [{'series_name': name, 'episodes': eps} for name, eps in new_db_data['series'].items()]
-        
-        final_db_data = {'movies': new_db_data['movies'], 'series': final_series_list}
+        # Try SxxExx format first
+        match = self.SEASON_EPISODE_REGEX.search(filename)
+        if match:
+            return int(match.group(2)), int(match.group(3))
 
-        self.db_manager.save(final_db_data)
-        log.info("Media scan complete and database updated.")
+        # Check path for season folder
+        season_num = 1
+        rel_path = os.path.relpath(root_path, show_path)
+        season_match = re.search(r'(s|season)[\s_.]?(\d{1,2})', rel_path, re.I)
+        if season_match:
+            season_num = int(season_match.group(2))
+
+        # Check filename for episode number
+        ep_match = self.EPISODE_REGEX.search(filename)
+        if ep_match:
+            return season_num, int(ep_match.group(2))
+        
+        # For single-video shows/documentaries, assign as S01E01
+        if root_path == show_path:
+             # Check if it's the only video file in the show's root
+            videos_in_root = [f for f in os.listdir(show_path) if self._is_valid_video(os.path.join(show_path, f))]
+            if len(videos_in_root) == 1:
+                log.info(f"Treating as single-video special: {filename}")
+                return 1, 1
+
+        log.warning(f"Could not determine episode number for: {filename}")
+        return season_num, None # Could not determine episode
 
 
 if __name__ == '__main__':

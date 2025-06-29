@@ -1,6 +1,6 @@
 import os
 import yaml
-from .utils import log
+from pondtv.utils import log
 
 class DatabaseManager:
     """Handles atomic loading and saving of the YAML database file."""

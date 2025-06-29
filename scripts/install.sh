@@ -67,7 +67,7 @@ After=network.target
 Type=simple
 User=$PI_USER
 WorkingDirectory=$APP_DIR
-ExecStart=$VENV_DIR/bin/python3 $APP_DIR/run.py
+ExecStart=$VENV_DIR/bin/python3 -m pondtv.main
 Restart=always
 RestartSec=10
 Environment=DISPLAY=:0

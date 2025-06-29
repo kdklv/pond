@@ -1,5 +1,5 @@
 import random
-from .utils import log
+from pondtv.utils import log
 
 class PlaylistEngine:
     """Creates an intelligent, shuffled playlist from the media database."""

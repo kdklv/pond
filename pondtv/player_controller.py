@@ -1,6 +1,7 @@
 import mpv
 import os
 from .utils import log
+import threading
 
 class PlayerController:
     """Handles the mpv player instance and playback controls."""
@@ -25,20 +26,33 @@ class PlayerController:
             # Add more mpv options here as needed for a kiosk-like experience
             # e.g., --no-border, --no-window-title
         )
-        self.player.observe_property('time-pos', self.time_pos_handler)
+        self._is_playing = False
+        self.player.observe_property('playback-time', self._time_pos_handler)
+        self.player.register_event_callback('end-file', self._end_file_handler)
         log.info("PlayerController initialized.")
 
-    def time_pos_handler(self, name, value):
-        """A placeholder for handling time position updates."""
-        # This can be used later for resume functionality or progress bars
+    @property
+    def is_playing(self):
+        """Returns True if the player is currently active."""
+        return self._is_playing
+
+    def _time_pos_handler(self, name, value):
+        """Handles time position updates for resume functionality."""
+        # This can be used later if needed
         pass
 
-    def play(self, media_item: dict):
+    def _end_file_handler(self, event):
+        """Callback for when a file finishes playing."""
+        log.info("File playback finished (end-file event).")
+        self._is_playing = False
+
+    def play(self, media_item: dict, start_pos: int = 0):
         """
         Plays a given media item.
 
         Args:
             media_item: A dictionary containing media details, including 'filepath'.
+            start_pos: The time in seconds to start playback from.
         """
         filepath = media_item.get('filepath')
         if not filepath:
@@ -46,20 +60,23 @@ class PlayerController:
             return
 
         full_path = os.path.join(self.media_path_prefix, filepath)
-        log.info(f"Playing media: {full_path}")
+        log.info(f"Playing media: {full_path} from {start_pos}s")
 
         try:
-            self.player.play(full_path)
-            # The wait_for_playback() will block until the video finishes
-            # or is stopped by the user.
+            self._is_playing = True
+            self.player.play(full_path, start=start_pos)
             self.player.wait_for_playback()
+            # Playback has finished naturally or was stopped.
+            # The _end_file_handler will set _is_playing to False.
             log.info(f"Finished playing: {filepath}")
         except Exception as e:
             log.error(f"Error playing {full_path}: {e}")
+            self._is_playing = False
 
-    def stop(self):
-        """Stops playback."""
-        log.info("Stopping playback.")
+    def shutdown(self):
+        """Stops playback and terminates the player."""
+        log.info("Shutting down player.")
+        self._is_playing = False
         self.player.terminate()
 
 if __name__ == '__main__':
@@ -84,21 +101,25 @@ if __name__ == '__main__':
     # The media_item only needs the filename, not the full path
     test_media_item = {'filepath': dummy_file_name}
 
-    log.info("Step 2: Starting playback (will stop automatically in 5s)...")
-    
-    # Since player.wait_for_playback() is blocking, we can't easily
-    # time it out here. For a real test, you'd run this in a thread.
-    # For this demonstration, we'll just show it can be called.
-    # The user should see an mpv window open and then close it manually.
-    print("\n\nMANUAL TEST REQUIRED: An mpv window will open playing a text file.")
-    print("Please close the mpv window manually to continue the test.\n\n")
+    log.info("Step 2: Starting playback in a separate thread...")
+    # Playback is blocking, so we run it in a thread for the test
+    playback_thread = threading.Thread(target=player_controller.play, args=(test_media_item,))
+    playback_thread.start()
 
-    player_controller.play(test_media_item)
+    time.sleep(1) # Give it a moment to start
+    assert player_controller.is_playing, "Player should be playing"
+    log.info("Player is playing as expected.")
 
-    log.info("Playback finished or was stopped by the user.")
+    log.info("Step 3: Shutting down player after 3 seconds...")
+    time.sleep(3)
+    player_controller.shutdown()
+    time.sleep(1) # Give it a moment to shut down
+    assert not player_controller.is_playing, "Player should not be playing"
+    log.info("Player shut down correctly.")
     
+    playback_thread.join()
+
     # Cleanup
-    player_controller.stop()
     os.remove(dummy_file_path)
     os.rmdir(dummy_dir)
     log.info("--- Test Complete ---") 

@@ -11,12 +11,12 @@ import signal
 import queue
 import threading
 from enum import Enum
-from utils import log
-from usb_manager import USBManager
-from database_manager import DatabaseManager
-from media_scanner import MediaScanner
-from playlist_engine import PlaylistEngine
-from player_controller import PlayerController
+from pondtv.utils import log
+from pondtv.usb_manager import USBManager
+from pondtv.database_manager import DatabaseManager
+from pondtv.media_scanner import MediaScanner
+from pondtv.playlist_engine import PlaylistEngine
+from pondtv.player_controller import PlayerController
 
 class AppState(Enum):
     """Application state enumeration for better state management."""
@@ -161,7 +161,8 @@ class PondTVApp:
             current_item = self.current_playlist[self.current_index]
             start_pos = current_item.get('resume_position') or 0
             
-            self.player_controller.play(current_item, start_pos=start_pos)
+            if self.player_controller:
+                self.player_controller.play(current_item, start_pos=start_pos)
             
             # Wait for playback to finish
             while self.player_controller and self.player_controller.is_playing:
@@ -176,11 +177,12 @@ class PondTVApp:
     def update_media_status(self, media_item: dict):
         """Update media status in database."""
         try:
-            if self.db_manager:
+            if self.db_manager and self.playlist_engine:
                 # Mark as seen
                 media_item['status'] = 'Seen'
                 media_item['resume_position'] = 0
-                self.db_manager.save()
+                # Save the entire database content
+                self.db_manager.save(self.playlist_engine.db_content)
         except Exception as e:
             log.error(f"Error updating media status: {e}")
 

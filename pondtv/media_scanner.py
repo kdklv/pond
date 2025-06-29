@@ -1,7 +1,7 @@
 import os
 import re
-from .utils import log
-from .database_manager import DatabaseManager
+from pondtv.utils import log
+from pondtv.database_manager import DatabaseManager
 
 class MediaScanner:
     """Scans the media drive and builds/updates the YAML database."""

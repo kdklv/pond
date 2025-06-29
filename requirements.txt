@@ -1,3 +1,4 @@
 pynput
 pyyaml
-psutil 
+psutil
+python-mpv 

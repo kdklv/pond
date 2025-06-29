@@ -1,6 +1,6 @@
 import os
 import psutil
-from .utils import log
+from pondtv.utils import log
 
 class USBManager:
     """Handles the detection and validation of the PondTV media drive."""
@@ -44,6 +44,22 @@ class USBManager:
                 
         log.warning("No PondTV media drive found.")
         return None
+
+    def is_drive_still_connected(self, path: str) -> bool:
+        """
+        Checks if a given path is still a valid and connected mountpoint.
+        
+        Args:
+            path: The mountpoint path to check.
+            
+        Returns:
+            True if the drive is still connected, False otherwise.
+        """
+        if not path or not os.path.exists(path):
+            return False
+            
+        # A simple way to check is to see if it's still in the list of mounts.
+        return path in [p.mountpoint for p in psutil.disk_partitions()]
 
 if __name__ == '__main__':
     # Test script for the USBManager

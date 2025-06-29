@@ -56,8 +56,10 @@ class USBManager:
         """Gets mount points from the Filesystem interface."""
         fs = interfaces.get('org.freedesktop.UDisks2.Filesystem')
         if fs and fs['MountPoints']:
-            # The paths are returned as byte arrays.
-            return [path.decode('utf-8') for path in fs['MountPoints']]
+            # The D-Bus call returns mount points as a list of byte arrays (aay).
+            # Each path is often null-terminated, so we must convert to bytes,
+            # decode, and strip trailing nulls.
+            return [bytes(p).decode('utf-8').rstrip('\x00') for p in fs['MountPoints']]
         return []
 
     def _is_media_drive(self, mount_path: str) -> bool:
@@ -77,7 +79,7 @@ class USBManager:
             log.info(f"Successfully mounted {object_path} at {mount_path}")
             return mount_path
         except Exception as e:
-            log.error(f"Failed to mount {object_path} via D-Bus: {e}")
+            log.error(f"Failed to mount {object_path}: {e}")
             return None
 
     def _unmount_partition(self, object_path: str):
@@ -101,6 +103,9 @@ class USBManager:
         # A simple os.path check is sufficient with D-Bus, as udisks
         # cleans up mount points on disconnect.
         return os.path.exists(path)
+
+    def _on_interfaces_added(self, path, interfaces):
+        log.info(f"Interfaces added at {path}")
 
 if __name__ == '__main__':
     # Test script for the USBManager

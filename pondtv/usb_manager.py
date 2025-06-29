@@ -74,8 +74,11 @@ class USBManager:
         """Mounts a partition using its D-Bus object path."""
         try:
             fs_interface = self.bus.get('org.freedesktop.UDisks2', object_path)['org.freedesktop.UDisks2.Filesystem']
-            # The third argument is a dict of mount options. Empty means default.
-            mount_path = fs_interface.Mount({})
+            # Add 'auth.no_user_interaction' to prevent auth prompts that
+            # would fail in a headless service environment. This is allowed
+            # by the polkit rule.
+            mount_options = {'auth.no_user_interaction': True}
+            mount_path = fs_interface.Mount(mount_options)
             log.info(f"Successfully mounted {object_path} at {mount_path}")
             return mount_path
         except Exception as e:

@@ -16,7 +16,7 @@ PondTV turns your Raspberry Pi into a plug-and-play TV channel for your media. T
 - **Channel Surfing** - Simple controls to switch content
 - **Offline First** - No internet required after setup
 - **Content Tracking** - Remembers what you've watched and where you left off
-- **Hot-Plug Support** - Handles USB drive disconnections gracefully
+- **Robust USB Handling** - Reliably detects and mounts USB drives on-the-fly
 
 ## 🌿 Preparing Your Media
 

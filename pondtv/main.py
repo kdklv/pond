@@ -47,6 +47,7 @@ class PondTVApp:
         self.current_playlist = []
         self.current_index = 0
         self.running = True
+        self.playback_finished = threading.Event()
         
         # Set up signal handlers for graceful shutdown
         signal.signal(signal.SIGINT, self._signal_handler)
@@ -93,6 +94,23 @@ class PondTVApp:
         # Unmount drive if we mounted it
         self.usb_manager.unmount_drive()
 
+    def _on_playback_finished(self):
+        """Callback triggered by PlayerController when a file ends."""
+        log.info("Playback finished callback triggered.")
+        if self.player_controller:
+            current_item = self.player_controller.get_current_item()
+            if current_item:
+                self.update_media_status(current_item)
+        
+        self.current_index += 1
+        self.playback_finished.set() # Signal the main loop to continue
+
+    def _on_player_quit(self):
+        """Callback triggered by PlayerController when the player is quit by the user."""
+        log.info("Player quit callback triggered. Shutting down.")
+        self.running = False
+        self.playback_finished.set()
+
     def wait_for_media_drive(self) -> bool:
         """Wait for a valid media drive to be connected. Returns True if found, False if shutting down."""
         self._set_state(AppState.WAITING_FOR_MEDIA)
@@ -137,10 +155,14 @@ class PondTVApp:
             
             if not self.current_playlist:
                 log.warning("No unseen content available. All media has been watched!")
+                # Wait for a while before re-scanning
+                time.sleep(30)
                 return False
             
             # Initialize player controller
             self.player_controller = PlayerController(media_path_prefix=self.media_path)
+            self.player_controller.register_on_end_file(self._on_playback_finished)
+            self.player_controller.register_on_quit(self._on_player_quit)
             
             log.info(f"Media components initialized successfully. Playlist has {len(self.current_playlist)} items.")
             return True
@@ -153,37 +175,34 @@ class PondTVApp:
     def start_playback(self):
         """Start the main playback loop."""
         self._set_state(AppState.PLAYING)
+        self.current_index = 0
         
-        while self.running and 0 <= self.current_index < len(self.current_playlist):
+        while self.running and self.current_index < len(self.current_playlist):
+            self.playback_finished.clear()
+            
             # Check for USB disconnect before starting next item
             if not self.media_path or not self.usb_manager.is_drive_still_connected(self.media_path):
                 log.warning("Media drive disconnected. Returning to scan mode.")
                 break
 
             current_item = self.current_playlist[self.current_index]
-            start_pos = current_item.get('resume_position') or 0
+            start_pos = current_item.get('resume_position', 0)
             
+            log.info(f"--- Starting playlist item {self.current_index + 1}/{len(self.current_playlist)} ---")
             if self.player_controller:
                 self.player_controller.play(current_item, start_pos=start_pos)
             
-            # Wait for playback to finish
-            while self.player_controller and self.player_controller.is_playing:
-                time.sleep(1)
-                
-            # Mark as seen and move to next
-            self.update_media_status(current_item)
-            self.current_index += 1
+            # Wait for the song to finish via the event
+            self.playback_finished.wait()
         
         log.info("Playlist finished or app is shutting down.")
 
     def update_media_status(self, media_item: dict):
-        """Update media status in database."""
+        """Update media status in database. The player controller already updated the in-memory item."""
         try:
             if self.db_manager and self.playlist_engine:
-                # Mark as seen
-                media_item['status'] = 'Seen'
-                media_item['resume_position'] = 0
-                # Save the entire database content
+                # The playlist engine holds the master copy of the library content
+                log.info(f"Saving database state for item: {media_item.get('title') or media_item.get('file_path')}")
                 self.db_manager.save(self.playlist_engine.db_content)
         except Exception as e:
             log.error(f"Error updating media status: {e}")

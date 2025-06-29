@@ -58,10 +58,13 @@ cp ./requirements.txt $APP_DIR/
 # --- Permissions and Services ---
 echo "⚙️  Configuring permissions and systemd service..."
 
+# Remove old pkla rule if it exists
+rm -f /etc/polkit-1/localauthority/50-local.d/60-pondtv-mount-policy.pkla
+
 # Install polkit rule for allowing mounting
-POLKIT_DIR="/etc/polkit-1/localauthority/50-local.d"
-mkdir -p $POLKIT_DIR
-cp ./release/pondtv.pkla "$POLKIT_DIR/60-pondtv-mount-policy.pkla"
+POLKIT_RULES_DIR="/etc/polkit-1/rules.d"
+mkdir -p $POLKIT_RULES_DIR
+cp ./release/40-pondtv-udisks.rules "$POLKIT_RULES_DIR/"
 systemctl restart polkit
 
 # Create and install the systemd service

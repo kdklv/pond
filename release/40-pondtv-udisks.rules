@@ -1,0 +1,7 @@
+// Allow any user to mount and unmount filesystems via udisks2
+polkit.addRule(function(action, subject) {
+    if (action.id == "org.freedesktop.udisks2.filesystem-mount" ||
+        action.id == "org.freedesktop.udisks2.filesystem-unmount") {
+        return polkit.Result.YES;
+    }
+}); 

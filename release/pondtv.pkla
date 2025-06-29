@@ -1,6 +1,0 @@
-[Allow PondTV to mount drives]
-Identity=unix-user:*
-Action=org.freedesktop.udisks2.filesystem-mount;org.freedesktop.udisks2.filesystem-unmount
-ResultAny=yes
-ResultInactive=yes
-ResultActive=yes 

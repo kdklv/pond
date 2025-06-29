@@ -13,6 +13,10 @@ if [ "$EUID" -ne 0 ]; then
   exit 1
 fi
 
+# Determine user to run the service as
+PI_USER=${SUDO_USER:-pi}
+echo "ℹ️  Installing for user: $PI_USER"
+
 # --- System Setup ---
 echo "📦 Installing system dependencies..."
 apt-get update -qq
@@ -41,9 +45,9 @@ cd $TEMP_DIR
 
 echo "🐍 Creating virtual environment and installing Python dependencies..."
 mkdir -p $VENV_DIR
-chown -R pi:pi $(dirname $VENV_DIR)
-sudo -u pi python3 -m venv $VENV_DIR
-sudo -u pi $VENV_DIR/bin/pip install -r requirements.txt
+chown -R $PI_USER:$PI_USER $(dirname $VENV_DIR)
+sudo -u $PI_USER python3 -m venv $VENV_DIR
+sudo -u $PI_USER $VENV_DIR/bin/pip install -r requirements.txt
 
 echo "📁 Installing PondTV to $APP_DIR..."
 # Copy the application logic
@@ -61,7 +65,7 @@ After=network.target
 
 [Service]
 Type=simple
-User=pi
+User=$PI_USER
 WorkingDirectory=$APP_DIR
 ExecStart=$VENV_DIR/bin/python3 $APP_DIR/run.py
 Restart=always

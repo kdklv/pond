@@ -14,6 +14,10 @@ if [ "$EUID" -ne 0 ]; then
   exit 1
 fi
 
+# Determine user to run the service as
+PI_USER=${SUDO_USER:-pi}
+echo "ℹ️  Installing for user: $PI_USER"
+
 # Check if we're on Raspberry Pi OS
 if ! grep -q "Raspberry Pi" /proc/device-tree/model 2>/dev/null; then
   echo "⚠️  Warning: This script is designed for Raspberry Pi OS"
@@ -34,9 +38,9 @@ VENV_DIR="$APP_DIR/venv"
 
 echo "🐍 Installing Python dependencies into a virtual environment..."
 mkdir -p $APP_DIR
-chown pi:pi $APP_DIR
-sudo -u pi python3 -m venv $VENV_DIR
-sudo -u pi $VENV_DIR/bin/pip install -r requirements.txt
+chown $PI_USER:$PI_USER $APP_DIR
+sudo -u $PI_USER python3 -m venv $VENV_DIR
+sudo -u $PI_USER $VENV_DIR/bin/pip install -r requirements.txt
 
 echo "📁 Installing PondTV to $APP_DIR..."
 cp -r ./pondtv $APP_DIR/
@@ -51,7 +55,7 @@ After=network.target
 
 [Service]
 Type=simple
-User=pi
+User=$PI_USER
 WorkingDirectory=$APP_DIR
 ExecStart=$VENV_DIR/bin/python3 $APP_DIR/run.py
 Restart=always

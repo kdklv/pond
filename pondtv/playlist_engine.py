@@ -14,7 +14,7 @@ class PlaylistEngine:
         self.db_content = db_content
         log.info("PlaylistEngine initialized.")
 
-    def create_playlist(self) -> list:
+    def create_playlist(self) -> list[dict]:
         """
         Creates a smart-shuffled playlist.
 
@@ -26,43 +26,35 @@ class PlaylistEngine:
             A shuffled list of media item dictionaries to be played.
         """
         log.info("Creating a new smart playlist...")
-        eligible_content = []
+        playlist = []
+        library = self.db_content
 
-        # Process movies
-        unseen_movies = [
-            movie for movie in self.db_content.get('movies', [])
-            if movie.get('status') == 'Unseen'
-        ]
-        eligible_content.extend(unseen_movies)
+        # Add unseen movies
+        movies = library.get('movies', [])
+        unseen_movies = [m for m in movies if not m.get('status') == 'Seen']
         log.info(f"Added {len(unseen_movies)} unseen movies to the playlist.")
+        playlist.extend(unseen_movies)
 
-        # Process series
-        for series in self.db_content.get('series', []):
-            # Add a check to ensure series is a dictionary before processing
-            if not isinstance(series, dict):
-                log.warning(f"Skipping malformed TV show entry in database: {series}")
+        # Add unseen TV episodes, prioritizing the next episode in each series
+        tv_shows = library.get('series', [])
+        for series in tv_shows:
+            episodes = series.get('episodes', [])
+            # Ensure episodes is a list of dictionaries, not strings
+            if episodes and isinstance(episodes[0], str):
+                log.warning(f"Skipping series {series.get('series_name', 'Unknown')} due to incompatible episode format.")
                 continue
+            episodes = sorted(episodes, key=lambda e: (e.get('season', 0), e.get('episode', 0)))
+            for ep in episodes:
+                if not ep.get('status') == 'Seen':
+                    log.info(f"Added next unseen episode from {series.get('series_name', 'Unknown')}: S{ep.get('season', 0)}E{ep.get('episode', 0)}")
+                    playlist.append(ep)
+                    break  # Only add the next unseen episode for this series
 
-            # Sort episodes to find the next unseen one
-            episodes = sorted(series.get('episodes', []), key=lambda e: (e.get('season', 0), e.get('episode', 0)))
-            
-            next_unseen_episode = None
-            for episode in episodes:
-                if episode.get('status') == 'Unseen':
-                    next_unseen_episode = episode
-                    break  # Found the first unseen one, stop looking for this series
-            
-            if next_unseen_episode:
-                # Add series context to the episode for easier identification
-                next_unseen_episode['series_name'] = series.get('series_name')
-                eligible_content.append(next_unseen_episode)
-                log.info(f"Added next unseen episode for '{series.get('series_name')}': S{next_unseen_episode['season']}E{next_unseen_episode['episode']}")
-
-        log.info(f"Total eligible items for shuffling: {len(eligible_content)}")
-        random.shuffle(eligible_content)
+        log.info(f"Total eligible items for shuffling: {len(playlist)}")
+        random.shuffle(playlist)
         log.info("Playlist shuffled.")
         
-        return eligible_content
+        return playlist
 
 if __name__ == '__main__':
     log.info("--- Running PlaylistEngine Test ---")

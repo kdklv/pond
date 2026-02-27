@@ -23,15 +23,16 @@ class MediaScanner:
     def scan(self) -> dict:
         """Performs a full scan of the media drive and returns the database content."""
         log.info("Starting media scan...")
-        db_content = {'movies': [], 'tv_shows': {}}
-        
+        db_content = {'movies': {}, 'tv_shows': {}}
+
         movies_path = os.path.join(self.media_path, "Movies")
-        if os.path.exists(movies_path):
+        if os.path.isdir(movies_path):
             db_content['movies'] = self._scan_movies(movies_path)
 
+        # The TV shows folder is named "TV_Shows" — this must match the
+        # MEDIA_MARKERS list in USBManager so the drive is correctly identified.
         shows_path = os.path.join(self.media_path, "TV_Shows")
-        if os.path.exists(shows_path):
-            # Note the key change from 'series' to 'tv_shows' for consistency
+        if os.path.isdir(shows_path):
             db_content['tv_shows'] = self._scan_series(shows_path)
             
         log.info("Media scan complete.")

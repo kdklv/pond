@@ -1,5 +1,0 @@
-pynput
-pyyaml
-psutil
-python-mpv
-pydbus 

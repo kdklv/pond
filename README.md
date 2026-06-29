@@ -2,27 +2,29 @@
 
 > A calm, offline alternative to streaming—content flows from your own collection. Power on, and watch.
 
+**Status:** Fully functional. Core engine running on Raspberry Pi 4s. See the [Getting Started](#getting-started) section to build and run it.
+
 PondTV turns a Raspberry Pi 4 into a plug-and-play TV channel for your media. Think *dumb-TV*, the way dumb-phones are: no apps, no accounts, no menus to get lost in. Power on and it's already playing. Flip channels with the remote already in your hand. When you're done, kill the power like any old television—nothing to corrupt, nothing to save.
 
 The whole library lives on a USB drive you organize yourself. Swap drives like mixtapes: one for cozy Sunday films, one for ripped YouTube channels, one for a comfort-show binge.
 
 ---
 
-## 🐸 Features
+## 🐸 Features (Implemented)
 
-- **Instant-On Playback** — boots straight into fullscreen video; channel-switching is instant, never a reload
+- **Instant-On Playback** — boots straight into fullscreen video; channel-switching is instant over a unix socket
 - **Channel Surfing** — your folders *are* the channels; flip Up/Down to surf, Left/Right to move within one
-- **Smart Show Handling** — a whole series counts as one channel; you always land on the next episode or where you left off
-- **Continue Where You Left Off** — per-video resume for both movies and series
+- **Smart Show Handling** — a whole series counts as one channel; natural sort keeps S01E02 before S01E10
+- **Continue Where You Left Off** — per-video resume position and duration stored on the USB
 - **Smart-Seen** — closing a video in its last 10 min (or last 20%) marks it watched and advances to the next
-- **Next-Episode / Binge** — auto-advance through a series, or step through a selection
-- **Auto-Subtitles** — same-name subtitle file beside the video loads automatically
-- **Portable Mixtapes** — watch-history rides *on the USB*, so any drive remembers its own state on any Pi
-- **Robust USB Handling** — detects and mounts drives itself; swap drives without a reboot, no fragile auto-mount stack
-- **Zero-Input Setup** — sensible defaults on first run; a `config.yml` appears for tweaking
-- **Channel / File Browser** — for when you want something specific
-- **Sleep Mode** — set a timer; it powers the Pi down cleanly like a real appliance
+- **Next Video / Channel** — keyboard controls move forward/back through videos or jump to the next channel
+- **Auto-Subtitles** — same-name `.srt`/`.ass` file beside the video loads automatically (mpv's `sub-auto`)
+- **Portable Mixtapes** — watch-history lives *on the USB* in `.pondtv/state.json`, so any drive remembers its state on any Pi
+- **Robust USB Handling** — detects, mounts, and unmounts drives itself; swap drives without a reboot
+- **Sensible Defaults** — works out of the box; watch-state and channels are derived automatically, nothing to configure initially
+- **Trailer Mode** — preview mode for trying new media; resets position and plays from the start
 - **Offline First** — no internet required after setup
+- **Crash-Safe State** — atomic writes (temp file → fsync → rename) so a power cut mid-save never corrupts your progress
 
 ---
 
@@ -65,7 +67,7 @@ Writes are made **crash-safe** (atomic temp-file swap — write to a temp file, 
 
 ### USB drive handling
 
-PondTV manages drives itself with a simple **presence poll** instead of a udev/udisks auto-mount stack — that stack is where most of the corner cases and races live, so we skip it. The channel manager periodically checks for a data partition: when one appears, it mounts it (with safe flush options), reads `config.yml`, walks the tree, builds channels, and resumes from saved state. When the mounted drive goes away, it pauses and shows an "insert a drive" screen.
+PondTV manages drives itself with a simple **presence poll** instead of a udev/udisks auto-mount stack — that stack is where most of the corner cases and races live, so we skip it. The channel manager periodically checks for a data partition: when one appears, it mounts it (with safe flush options), walks the tree, builds channels, and resumes from saved state. When the mounted drive goes away, it pauses and shows an "insert a drive" screen.
 
 Because PondTV owns the mount itself, the operations are synchronous and fully under its control — no reacting to async events before a filesystem has settled. You still get **swap-without-reboot**: pull one mixtape, push in another, and it reloads. exFAT/NTFS support is installed up front so ordinary big-video drives just work.
 
@@ -109,7 +111,6 @@ USB_DRIVE/
 
 Actions are abstract — in v1 they map to a USB keyboard. Other input drivers (TV remote over HDMI-CEC, a GPIO knob) can plug into the same actions later.
 
-
 | Key / Button   | Action                                                                                    |
 | -------------- | ----------------------------------------------------------------------------------------- |
 | **Space / OK** | Play / Pause                                                                              |
@@ -120,15 +121,43 @@ Actions are abstract — in v1 they map to a USB keyboard. Other input drivers (
 | **B**          | Open channel / file browser                                                               |
 | **Sleep**      | Start the shut-off timer                                                                  |
 
+---
+
+## 🚀 Getting Started
+
+**Prerequisites:**
+- Raspberry Pi 4 running Raspberry Pi OS Lite (64-bit)
+- USB drive formatted as exFAT or NTFS with media organized per the [Preparing Your Media](#🌿-preparing-your-media) section
+- SSH access to the Pi (or direct keyboard/console access)
+
+**Setup:**
+
+See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the complete one-time Pi setup (install mpv, Python, filesystem tools) and guidance on running over SSH.
+
+**First run:**
+
+```bash
+# On the Pi, with a USB drive plugged in and the console/TV ready:
+sudo python3 -m pondtv
+```
+
+The app will:
+1. Detect and mount the USB drive
+2. Walk the folder tree and build channels
+3. Load the first video in the first channel
+4. Restore your watch-position if you've seen it before
+
+See [docs/PLAN.md](docs/PLAN.md) for technical architecture and design decisions.
 
 ---
 
-## 🏊 Configuration
+## 🏊 Configuration (Future)
 
-On first run, PondTV writes a `config.yml` to the USB root with sensible defaults. Because it lives on the drive, **each mixtape carries its own settings** — that's what makes one drive "calm Sunday films" and another "chaotic YouTube rips."
+Configuration via `config.yml` is planned but not yet implemented. When added, it will live on the USB drive so **each mixtape carries its own settings** — making one drive "calm Sunday films" and another "chaotic YouTube rips."
 
+Planned config options:
 ```yaml
-# .pondtv/config.yml  (illustrative)
+# .pondtv/config.yml  (planned)
 shuffle: false              # flip channels in random order
 sleep_timer_minutes: 0      # 0 = off
 smart_seen:
@@ -138,6 +167,8 @@ channel_order: auto         # auto (natural sort) | manual list
 commercials: false          # inject clips from a commercials/ folder
 
 ```
+
+For now, all settings use hardcoded defaults (smart-seen at 10 min / 20%, natural sort ordering).
 
 ---
 
@@ -158,13 +189,23 @@ commercials: false          # inject clips from a commercials/ folder
 
 ---
 
-## 💭 Ideas / Roadmap
+## 💭 Roadmap (Not Yet Implemented)
 
-- **Random Mode** — shuffle a channel's playlist for that channel-flipping feel *(config flag)*
-- **Commercial Breaks** — inject clips from a `commercials/` folder between videos for nostalgic TV *(playlist trick, no engine change)*
-- **Visual Effects** — runtime mpv video filters (e.g. a VHS look) toggled over the socket
-- **Flashable OS Image** — ship a pre-built, shrunk SD-card image with PondTV ready to go
+The modular, pluggable design makes these additions straightforward:
+
+**Near-term (partially wired, need implementation):**
+- **Channel / File Browser** — browse/search the tree to jump directly to a specific video (action key mapped, UI not yet built)
+- **Sleep Mode** — set a timer to power down the Pi cleanly (action key mapped, shutdown logic not yet built)
+- **Configuration** — load `config.yml` from USB to customize smart-seen, shuffle, etc.
+
+**Medium-term (no core changes needed):**
+- **Random Mode** — shuffle a channel's playlist for that channel-flipping feel (config flag + playlist mixer)
+- **Commercial Breaks** — inject clips from a `commercials/` folder between videos (mpv playlist trick)
+- **Visual Effects** — runtime mpv video filters (e.g. VHS look, grain) toggled over the socket (mpv filter graph)
+- **GPIO Channel Knob** — a rotary encoder for a tactile, literal channel dial (plugs into the action abstraction)
+
+**Long-term (new input drivers):**
+- **HDMI-CEC Input** — drive PondTV from the TV's own remote over HDMI (second input driver; could power down TV on Sleep)
 - **Web Interface** — manage the library from a browser on the same network
-- **GPIO Channel Knob** — a rotary encoder for a tactile, literal channel dial
-- **HDMI-CEC Input** — drive PondTV from the TV's own remote over the HDMI cable, zero extra hardware (a second input driver behind the existing action abstraction); the same link could send the TV to standby on Sleep
+- **Pre-built OS Image** — a shrunk, flashable SD-card image with PondTV ready to boot
 

@@ -1,31 +1,29 @@
 # PondTV
 
-> A calm, offline dumb-TV for your own media. Power on, and it's already playing.
+> Boot a Raspberry Pi straight into a fullscreen video channel. No apps, no accounts, no menus — plug in a USB drive and it plays.
 
-PondTV turns a Raspberry Pi 4 into a single channel for a USB drive full of videos. No apps, no accounts, no menus to get lost in — power on and it's playing, flip channels with the arrow keys, kill the power when you're done like any old television. Nothing to save, nothing to corrupt.
+PondTV turns a Pi 4 into a single-purpose television for a local media library. Your folder structure is the channel guide. Swap USB drives like tapes — each one remembers where you left off on any Pi. Kill the power when you're done. There's nothing to save and nothing to corrupt.
 
-The whole library lives on a USB stick you organize yourself. Swap drives like mixtapes: one for cozy Sunday films, one for ripped YouTube channels, one for a comfort-show binge. Each one remembers where you left off, on any Pi.
-
-**Status** — the core runs on a Pi 4: fullscreen mpv playback, channel surfing, resume positions, self-managed USB mount, crash-safe state, a boot service, and `config.yml`. Two keys are still stubs (the browser and sleep timer); see [Roadmap](#roadmap).
+**Status** — the core runs on a Pi 4: fullscreen mpv playback over DRM/KMS, channel surfing, resume positions, self-managed USB mount, crash-safe state, a boot service, and `config.yml`. Two keys are still stubs (the browser and sleep timer); see [Roadmap](#roadmap).
 
 ## How it works
 
-PondTV isn't really a player. It's a thin **channel manager** that drives one long-lived [mpv](https://mpv.io) process over a socket and reads your folder tree as the guide. Three ideas do all the work:
+PondTV is a thin **channel manager** driving one long-lived [mpv](https://mpv.io) process over a socket. Three things carry the design:
 
-- **mpv is the engine** — a single process starts at boot and never restarts, rendering fullscreen via DRM/KMS (no desktop, no X11), with hardware decode, playlists, resume, and automatic same-name subtitles. Switching channels is a message down the socket, not a new process — that's why it's instant.
-- **Folders are the channels** — one rule, no metadata or filename parsing:
+- **mpv is the engine** — a single process starts at boot and never restarts, rendering fullscreen via DRM/KMS (no desktop, no X11), with hardware decode, playlists, resume, and automatic same-name subtitles. Channel switches are a message down the socket, not a new process — that's why they're instant.
+- **Folders are the channels** — one rule:
 
-  > A channel is the first folder beneath a top-level category; everything deeper collapses up into it. A category with loose videos in it is itself one channel.
+  > A channel is the first folder beneath a top-level category; everything deeper collapses up into it. A category with loose videos is itself one channel.
 
-  **Natural sort** keeps `S01E02` before `S01E10` and Season 01 before Season 02. The list is derived fresh on every mount — never stored, nothing to corrupt.
+  Natural sort keeps `S01E02` before `S01E10` and Season 01 before Season 02. The list is derived fresh on every mount — never stored, nothing to corrupt.
 
-- **State rides on the USB** — in a hidden `.pondtv/` at the drive root, keyed by path *relative* to the USB (so a drive works on any Pi). Writes are atomic (temp → fsync → rename) and rare, because the whole point is you yank the power like a real TV. The Pi's OS can run on a read-only overlay root, so a hard power-off can't brick it either.
+- **State rides on the USB** — in a hidden `.pondtv/` directory at the drive root, keyed by path relative to the USB (so a drive works on any Pi). Writes are atomic (temp → fsync → rename) and infrequent, because the whole point is you pull the power like a real TV. The Pi's OS can run on a read-only overlay root, so a hard power-off can't brick it either.
 
 Full architecture and design rationale in [docs/PLAN.md](docs/PLAN.md).
 
 ## Preparing your media
 
-The folder structure *is* the configuration — no naming scheme to memorize, just keep things in order.
+The folder structure is the configuration. No naming scheme to memorize — just keep things in order.
 
 ```
 USB_DRIVE/
@@ -43,26 +41,24 @@ USB_DRIVE/
 ├── Ripped YT Channels/           ← loose files = one channel
 │   ├── Video 01.mp4
 │   └── Video 02.mp4
-└── Selections/                   ← a hand-picked mixtape channel
+└── Selections/                   ← hand-picked mix = one channel
     ├── Clip A.mp4
     └── Clip B.mp4
 ```
 
-> Tip: to make a sequel feel like "the next episode" of a movie, put both files in the same movie folder, named in order.
-
 ## Controls
 
-Actions are abstract; in v1 they map to a USB keyboard. Other drivers (the TV remote over HDMI-CEC, a GPIO knob) can plug into the same actions later.
+Actions are abstract — in v1 they map to a USB keyboard. Other drivers (HDMI-CEC, a GPIO knob) can plug into the same actions later.
 
 | Key | Action |
 | --- | --- |
 | **Space / Enter** | Play / Pause |
 | **← / →** | Seek 10s (hold = rewind / fast-forward) |
 | **A / D** | Previous / next video within the channel |
-| **↑ / ↓** | Change channel — the headline "surfing" |
+| **↑ / ↓** | Change channel |
 | **Backspace** | Restart current video |
 | **S** | Mark as seen (skip to next) |
-| **T** | Toggle trailer mode (catch fresh videos mid-broadcast) |
+| **T** | Toggle trailer mode (skip to unwatched videos) |
 | **B** | Browser *(stub)* |
 | **Sleep / Power** | Shut-off timer *(stub)* |
 | **Esc / Q** | Quit (disabled on a deployed appliance) |
@@ -89,10 +85,10 @@ Pi setup, running mpv on the console from SSH, and testing without a real USB dr
 
 ## Configuration
 
-Optional `config.yml`, loaded in order (later wins): built-in defaults → `/etc/pondtv/config.yml` or `~/.config/pondtv/config.yml` (machine) → `.pondtv/config.yml` at the USB root (per-drive, travels with the mixtape) → environment. Unknown keys are ignored, and a missing or broken file falls back to the layer below. See [`packaging/config.example.yml`](packaging/config.example.yml).
+Optional `config.yml`, loaded in order (later wins): built-in defaults → `/etc/pondtv/config.yml` or `~/.config/pondtv/config.yml` (machine) → `.pondtv/config.yml` at the USB root (per-drive, travels with the drive) → environment. Unknown keys are ignored. A missing or broken file falls back to the layer below. See [`packaging/config.example.yml`](packaging/config.example.yml).
 
 ```yaml
-# .pondtv/config.yml  (per-drive — travels with the mixtape)
+# .pondtv/config.yml  (per-drive — travels with the drive)
 trailer_default: false     # start in flip-through mode
 seek_seconds: 10.0         # ←/→ scrub step
 allow_quit: true           # off for kiosks (the service sets PONDTV_ALLOW_QUIT=0)
@@ -100,7 +96,7 @@ allow_quit: true           # off for kiosks (the service sets PONDTV_ALLOW_QUIT=
 
 ## Roadmap
 
-The pluggable design keeps these mostly additive:
+The architecture is pluggable — these are mostly additive:
 
 - **Browser** — browse/search the tree to jump to a specific video (key mapped, UI not built).
 - **Sleep timer** — power the Pi down cleanly on a timer (key mapped, logic not built).

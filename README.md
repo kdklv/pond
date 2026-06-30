@@ -45,6 +45,9 @@ USB_DRIVE/
 | Backspace | Restart video |
 | S | Mark seen (skip to next) |
 | T | Trailer mode (skip to unwatched) |
+| B | Browser — channel & episode guide |
+
+In the browser: **↑/↓** move the cursor, **→** (or **D** / **Space**) drills into a channel or plays the highlighted episode, **←** (or **A** / **Backspace**) goes back, **S** toggles seen, **B** closes. The list shows a `·` against watched episodes and a `seen/total` count per channel.
 
 Input is abstracted behind an action enum — HDMI-CEC or a GPIO rotary encoder can plug in later.
 
@@ -78,7 +81,6 @@ allow_quit: true
 
 ## Roadmap
 
-- **Browser** — navigate the channel tree to jump to a specific video
 - **Sleep timer** — clean shutdown on a timer
 - **Smart-seen** — auto-mark watched when leaving near the end
 - **HDMI-CEC input** — use the TV's remote

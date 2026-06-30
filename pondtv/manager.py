@@ -35,11 +35,24 @@ import traceback
 from pathlib import Path
 
 from .actions import Action
+from .browser import BROWSER_ROWS, render_browser, scroll_to
 from .channels import Channel, build_channels
 from .config import Config, load_drive_overrides
 from .input_kbd import KeyboardInput
 from .drive import DriveManager
 from .mpv_ipc import MpvIPC, launch_mpv
+from .overlay import (
+    C_DIM,
+    C_PRIMARY,
+    C_TRACK,
+    TIGHT,
+    TRACK,
+    OV_X,
+    ass_escape,
+    bar,
+    fmt_time,
+    style,
+)
 from .state import State
 
 OVERLAY_ID = 1           # osd-overlay slot for our UI
@@ -51,50 +64,10 @@ OBS_TIMEPOS = 2
 OBS_DURATION = 3
 OBS_PAUSE = 4
 
-# --- On-screen overlay design (one font/size; hierarchy via colour + tracking)
-OV_FONT = "DejaVu Sans Mono"
-OV_FS = 40                       # single type size, 1920x1080 canvas
-OV_X = 130                       # left margin
-BAR_CELLS = 34                   # progress bar width, in mono cells
-
-# ASS colours are &HBBGGRR&.
-C_PRIMARY = r"{\c&HE3EAED&}"     # #EDEAE3 warm off-white — active text / fill
-C_DIM = r"{\c&H848C8C&}"         # #8C8C84 muted gray — labels / secondary
-C_TRACK = r"{\c&H464A4A&}"       # #4A4A46 — empty progress track
-TRACK = r"{\fsp7}"               # tracked spacing for uppercase labels
-TIGHT = r"{\fsp0}"               # normal spacing
-
 # Hold durations (seconds) for transient overlays.
 HOLD_TITLE = 3.4
 HOLD_FLASH = 1.6
 HOLD_SEEK = 1.3
-
-
-def _fmt_time(seconds: float) -> str:
-    seconds = int(max(0, seconds))
-    h, rem = divmod(seconds, 3600)
-    m, s = divmod(rem, 60)
-    return f"{h}:{m:02d}:{s:02d}" if h else f"{m:02d}:{s:02d}"
-
-
-def _ass_escape(text: str) -> str:
-    # Keep user filenames from breaking ASS markup.
-    return text.replace("\\", "\\\\").replace("{", "(").replace("}", ")")
-
-
-def _bar(frac: float) -> str:
-    frac = min(1.0, max(0.0, frac))
-    filled = int(round(frac * BAR_CELLS))
-    return f"{C_PRIMARY}{'█' * filled}{C_TRACK}{'░' * (BAR_CELLS - filled)}"
-
-
-def _style(an: int = 7, x: int = OV_X, y: int = 690) -> str:
-    """Shared ASS preamble: the one font, the one size, a crisp legibility
-    outline, anchored at (x, y)."""
-    return (
-        f"{{\\an{an}\\pos({x},{y})\\fn{OV_FONT}\\fs{OV_FS}\\b0"
-        r"\bord2\3c&H000000&\shad0}"
-    )
 
 
 class Manager:
@@ -117,6 +90,16 @@ class Manager:
         self._pending_start: tuple[str, float] | None = None
         self.trailer_mode = self.cfg.trailer_default
         self._overlay_gen = 0  # bumped on every overlay change; guards auto-clear
+        # Browser overlay state. ``_browser_mode`` is None when closed, else
+        # "channels" or "episodes" (the two drill-down panes). Cursors/tops are
+        # scroll offsets kept inside the lock; rendering is done by browser.py.
+        self._browser_mode: str | None = None
+        self._br_ch_cursor = 0
+        self._br_ch_top = 0
+        self._br_ep_cursor = 0
+        self._br_ep_top = 0
+        self._browser_was_paused = False  # pause state captured on open, restored on close
+
         # Latest values of observed mpv properties, kept fresh by the reader
         # thread so we never block on a get_property. Read via _prop().
         self._props: dict[str, object] = {}
@@ -239,6 +222,7 @@ class Manager:
         with self._lock:
             self._props.clear()
             self._pending_start = None
+            self._browser_mode = None  # mpv restart wiped the overlay; drop browse state
             if self.channels:
                 self._play_current(resume=True)  # resume from last saved position
             elif self.root is not None:
@@ -266,13 +250,14 @@ class Manager:
 
     def _no_videos(self) -> None:
         ass = (
-            _style(an=5, x=960, y=540)
+            style(an=5, x=960, y=540)
             + f"{C_PRIMARY}{TRACK}PONDTV\\N\\N{C_DIM}{TRACK}NO VIDEOS ON THIS DRIVE"
         )
         self._set_overlay(ass)
 
     def _on_unmount(self) -> None:
         with self._lock:
+            self._browser_mode = None  # drop out of the browser if it was open
             self._save_progress()
             self.root = None
             self.channels = []
@@ -364,7 +349,7 @@ class Manager:
 
     def _show_idle(self) -> None:
         ass = (
-            _style(an=5, x=960, y=540)
+            style(an=5, x=960, y=540)
             + f"{C_PRIMARY}{TRACK}PONDTV\\N\\N"
             + f"{C_DIM}{TRACK}NO DRIVE DETECTED\\N"
             + f"{C_DIM}{TRACK}INSERT A USB DRIVE TO BEGIN"
@@ -374,8 +359,8 @@ class Manager:
     def _show_title(self) -> None:
         """Brief channel/title card on a change."""
         meta, title = self._channel_meta()
-        head = f"{C_DIM}{TRACK}{_ass_escape(meta)}\\N" if meta else ""
-        ass = _style(y=830) + head + f"{C_PRIMARY}{TIGHT}{_ass_escape(title)}"
+        head = f"{C_DIM}{TRACK}{ass_escape(meta)}\\N" if meta else ""
+        ass = style(y=830) + head + f"{C_PRIMARY}{TIGHT}{ass_escape(title)}"
         self._set_overlay(ass, hold=HOLD_TITLE)
 
     def _show_seek(self) -> None:
@@ -383,8 +368,8 @@ class Manager:
         pos, dur = self._pos_dur()
         frac = (pos / dur) if dur else 0.0
         ass = (
-            _style(y=860)
-            + f"{C_DIM}{TIGHT}{_fmt_time(pos)}   {_bar(frac)}   {C_DIM}{_fmt_time(dur)}"
+            style(y=860)
+            + f"{C_DIM}{TIGHT}{fmt_time(pos)}   {bar(frac)}   {C_DIM}{fmt_time(dur)}"
         )
         self._set_overlay(ass, hold=HOLD_SEEK)
 
@@ -395,17 +380,17 @@ class Manager:
         pos, dur = self._pos_dur()
         frac = (pos / dur) if dur else 0.0
         ass = (
-            _style(y=690)
-            + f"{C_DIM}{TRACK}{_ass_escape(label)}\\N"
-            + f"{C_PRIMARY}{TIGHT}{_ass_escape(title)}\\N\\N"
-            + f"{C_DIM}{TIGHT}{_fmt_time(pos)}   {_bar(frac)}   {C_DIM}{_fmt_time(dur)}\\N\\N"
+            style(y=690)
+            + f"{C_DIM}{TRACK}{ass_escape(label)}\\N"
+            + f"{C_PRIMARY}{TIGHT}{ass_escape(title)}\\N\\N"
+            + f"{C_DIM}{TIGHT}{fmt_time(pos)}   {bar(frac)}   {C_DIM}{fmt_time(dur)}\\N\\N"
             + f"{C_DIM}{TRACK}←→ SEEK    A/D EPISODE    ↑↓ CHANNEL    SPACE PLAY"
         )
         self._set_overlay(ass)
 
     def _flash(self, text: str) -> None:
         """One-line transient status, e.g. RESTART / SEEN / TRAILER ON."""
-        ass = _style(y=880) + f"{C_DIM}{TRACK}{_ass_escape(text.upper())}"
+        ass = style(y=880) + f"{C_DIM}{TRACK}{ass_escape(text.upper())}"
         self._set_overlay(ass, hold=HOLD_FLASH)
 
     def _pos_dur(self) -> tuple[float, float]:
@@ -530,6 +515,11 @@ class Manager:
         with self._lock:
             if not self.channels or self._current_rel is None:
                 return
+            # The browser pauses playback on open, so EOF shouldn't fire while
+            # it's up; if a race delivers one anyway, ignore it rather than let
+            # an auto-advance clobber the browse overlay.
+            if self._browser_mode is not None:
+                return
             # Reaching the end always counts as seen; advance to the next video.
             if self.state is not None:
                 self.state.mark_seen(self._current_rel)
@@ -544,6 +534,20 @@ class Manager:
                 if action is Action.QUIT:
                     if self.cfg.allow_quit:
                         self._running = False
+                    return
+                # B toggles the browser open/closed. Opening requires a mounted
+                # drive (no browsing the idle screen).
+                if action is Action.BROWSE:
+                    if self._browser_mode is not None:
+                        self._close_browser(restore=True)
+                    elif self.channels:
+                        self._open_browser()
+                    return
+                # While open, the browser captures every navigation action; only
+                # QUIT (above) leaks through. This keeps playback controls from
+                # fighting the browse cursor.
+                if self._browser_mode is not None:
+                    self._on_browser_action(action)
                     return
                 if not self.channels:
                     self._show_idle()
@@ -570,8 +574,6 @@ class Manager:
                         self.state.mark_seen(self._current_rel)
                         self._request_save()
                     self._advance(+1, save_current=False)
-                elif action is Action.BROWSE:
-                    self._flash("BROWSER — SOON")
                 elif action is Action.TOGGLE_TRAILER:
                     self.trailer_mode = not self.trailer_mode
                     self._flash(f"TRAILER {'ON' if self.trailer_mode else 'OFF'}")
@@ -600,6 +602,143 @@ class Manager:
             self._show_pause()
         else:
             self._show_seek()
+
+    # -- browser overlay --------------------------------------------------
+
+    def _render_browser(self) -> None:
+        """Redraw the browse overlay from the current cursor/top state."""
+        if self._browser_mode is None:
+            return
+        ass = render_browser(
+            self._browser_mode,
+            self.channels,
+            self._br_ch_cursor,
+            self._br_ch_top,
+            self._br_ep_cursor,
+            self._br_ep_top,
+            self.state,
+        )
+        self._set_overlay(ass)
+
+    def _open_browser(self) -> None:
+        """Enter the browser at the channel list, parked on the current channel.
+
+        Playback is paused and the position checkpointed so the browser is a
+        focused, frozen-frame mode; the prior pause state is restored on close.
+        Caller holds the lock; ``self.channels`` is non-empty (checked upstream).
+        """
+        self._browser_mode = "channels"
+        self._br_ch_cursor = self.ch_idx
+        self._br_ch_top = scroll_to(
+            self._br_ch_cursor, 0, len(self.channels), BROWSER_ROWS
+        )
+        self._br_ep_cursor = 0
+        self._br_ep_top = 0
+        self._browser_was_paused = bool(self._prop("pause", False))
+        self._save_progress()
+        self.mpv.set_property_async("pause", True)
+        self._props["pause"] = True
+        self._render_browser()
+
+    def _close_browser(self, restore: bool = True) -> None:
+        """Leave the browser. If ``restore``, put playback back as it was (play
+        or pause); if not, the caller has already loaded a fresh video."""
+        self._browser_mode = None
+        if restore:
+            self._restore_after_browser()
+
+    def _restore_after_browser(self) -> None:
+        was = self._browser_was_paused
+        self.mpv.set_property_async("pause", was)
+        self._props["pause"] = was
+        if was:
+            self._show_pause()
+        else:
+            self._clear_overlay()
+
+    def _on_browser_action(self, action: Action) -> None:
+        # ↑/↓ move the cursor in the active pane; →/D/Space drill in or play;
+        # ←/A/Backspace go back (episodes → channels, channels → close); S
+        # toggles seen on the highlighted episode.
+        if action in (Action.CHANNEL_UP, Action.CHANNEL_DOWN):
+            delta = -1 if action is Action.CHANNEL_UP else 1
+            self._browser_move(delta)
+        elif action in (Action.SEEK_FWD, Action.NEXT, Action.PLAY_PAUSE):
+            self._browser_forward()
+        elif action in (Action.SEEK_BACK, Action.PREV, Action.RESTART):
+            self._browser_back()
+        elif action is Action.MARK_SEEN:
+            self._browser_toggle_seen()
+        # TOGGLE_TRAILER / SLEEP / unmapped: ignored inside the browser.
+
+    def _browser_move(self, delta: int) -> None:
+        if self._browser_mode == "channels":
+            n = len(self.channels)
+            self._br_ch_cursor = (self._br_ch_cursor + delta) % n
+            self._br_ch_top = scroll_to(
+                self._br_ch_cursor, self._br_ch_top, n, BROWSER_ROWS
+            )
+        else:
+            ch = self.channels[self._br_ch_cursor]
+            n = len(ch.videos)
+            self._br_ep_cursor = (self._br_ep_cursor + delta) % n
+            self._br_ep_top = scroll_to(
+                self._br_ep_cursor, self._br_ep_top, n, BROWSER_ROWS
+            )
+        self._render_browser()
+
+    def _browser_forward(self) -> None:
+        if self._browser_mode == "channels":
+            # Drill into the highlighted channel's episodes, parked on its
+            # saved/current video (so re-entering the channel you're watching
+            # lands on the episode you're on).
+            self._browser_mode = "episodes"
+            ch = self.channels[self._br_ch_cursor]
+            self._br_ep_cursor = self._resume_index_for_channel(self._br_ch_cursor)
+            self._br_ep_top = scroll_to(
+                self._br_ep_cursor, 0, len(ch.videos), BROWSER_ROWS
+            )
+            self._render_browser()
+        else:
+            self._browser_play()
+
+    def _browser_back(self) -> None:
+        if self._browser_mode == "episodes":
+            self._browser_mode = "channels"
+            self._render_browser()
+        else:
+            self._close_browser(restore=True)
+
+    def _browser_play(self) -> None:
+        """Play the highlighted episode and drop out of the browser.
+
+        Selecting the exact video that's already playing does **not** reload it
+        (that would seek back to the stale resume point); we just resume viewing
+        from the current position.
+        """
+        same = (
+            self._br_ch_cursor == self.ch_idx
+            and self._br_ep_cursor == self.vid_idx
+        )
+        self.ch_idx = self._br_ch_cursor
+        self.vid_idx = self._br_ep_cursor
+        self._browser_mode = None
+        if same:
+            self._restore_after_browser()
+        else:
+            self._play_current(resume=True)  # loads, plays, clears overlay, titles
+
+    def _browser_toggle_seen(self) -> None:
+        if self._browser_mode != "episodes" or self.state is None:
+            return
+        ch = self.channels[self._br_ch_cursor]
+        rel = ch.videos[self._br_ep_cursor]
+        if self.state.is_seen(rel):
+            self.state.update_video(rel, seen=False)
+        else:
+            self.state.mark_seen(rel)
+        self._request_save()
+        self._render_browser()
 
     # -- periodic checkpoint ---------------------------------------------
 

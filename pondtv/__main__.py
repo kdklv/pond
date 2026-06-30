@@ -9,11 +9,12 @@ systemd service which does this for you).
 
 from __future__ import annotations
 
+from .config import load_config
 from .manager import Manager
 
 
 def main() -> None:
-    mgr = Manager()
+    mgr = Manager(load_config())
     mgr.start()
     mgr.run_forever()
 

@@ -1,0 +1,20 @@
+# PondTV configuration (all keys optional; shown values are the built-in defaults).
+#
+# Precedence, lowest to highest:
+#   1. built-in defaults
+#   2. this file at /etc/pondtv/config.yml or ~/.config/pondtv/config.yml  (machine-wide)
+#   3. .pondtv/config.yml at a USB drive's root                            (per-drive)
+#   4. environment: PONDTV_ALLOW_QUIT, PONDTV_MOUNTPOINT
+#
+# The systemd unit sets PONDTV_ALLOW_QUIT=0, so deployed appliances ignore Esc/Q
+# regardless of this file.
+
+mountpoint: /mnt/pondtv
+poll_interval: 2.0          # USB presence poll, seconds
+seek_seconds: 10.0          # ←/→ scrub step
+checkpoint_seconds: 30.0    # periodic position save while playing
+resume_min_seconds: 60.0    # min watched before a video gets a resume point
+watchdog_seconds: 3.0       # mpv liveness check / reconnect cadence
+keyboard_rescan_seconds: 3.0  # poll /dev/input for a hot-plugged keyboard
+trailer_default: false      # start in trailer (flip-through) mode
+allow_quit: true            # honour Esc/Q QUIT (off for kiosks)

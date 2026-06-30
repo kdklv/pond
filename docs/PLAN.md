@@ -126,8 +126,8 @@ to read the keyboard device from `/dev/input` directly; it's headless-safe. Map 
 `Action`:
 
 ```
-SPACE→PLAY_PAUSE  ←/→→PREV/NEXT  ↑/↓→CHANNEL_DOWN/CHANNEL_UP
-BACKSPACE→RESTART  S→MARK_SEEN  B→BROWSE  (sleep key)→SLEEP
+SPACE/ENTER→PLAY_PAUSE  ←/→→SEEK_BACK/SEEK_FWD  A/D→PREV/NEXT  ↑/↓→CHANNEL_UP/CHANNEL_DOWN
+BACKSPACE→RESTART  S→MARK_SEEN  T→TOGGLE_TRAILER  B→BROWSE  (sleep key)→SLEEP  ESC/Q→QUIT
 ```
 
 ---

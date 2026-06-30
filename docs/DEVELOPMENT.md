@@ -18,6 +18,21 @@ SSH is for code + logs; the TV is your display. Plan to glance at the screen to 
   ```
   sudo usermod -aG input,video $USER   # re-login to take effect
   ```
+- Install the Python dependencies (pinned in `requirements.txt`):
+  ```
+  python3 -m venv .venv && . .venv/bin/activate
+  pip install -r requirements.txt        # or: pip install -e ".[dev]"
+  ```
+  `evdev` builds a C extension, so `python3-dev` must be present (it ships with
+  `python3` on Pi OS). Run the tests with `pytest`.
+
+- Install as a service (boots straight to PondTV, restarts on crash):
+  ```
+  sudo cp packaging/pondtv.service /etc/systemd/system/
+  sudo systemctl enable --now pondtv
+  ```
+  Optional config: copy `packaging/config.example.yml` to `/etc/pondtv/config.yml`
+  (machine-wide) or `.pondtv/config.yml` at a USB root (per-drive).
 
 ## Running mpv on the console from SSH
 

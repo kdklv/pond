@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import selectors
 import threading
+import time
 from typing import Callable
 
 import evdev
@@ -65,34 +66,82 @@ def find_keyboards() -> list[evdev.InputDevice]:
 
 
 class KeyboardInput:
-    """Background evdev reader that dispatches abstract actions to a callback."""
+    """Background evdev reader that dispatches abstract actions to a callback.
 
-    def __init__(self, callback: Callable[[Action, bool], None], grab: bool = False):
+    Appliance-friendly: it never fails just because no keyboard is present at
+    start-up (the Pi may boot before anyone plugs one in). The reader thread
+    starts regardless and **rescans** ``/dev/input`` periodically, picking up a
+    keyboard the moment it's connected and dropping devices that go away.
+    """
+
+    def __init__(
+        self,
+        callback: Callable[[Action, bool], None],
+        grab: bool = False,
+        rescan_seconds: float = 3.0,
+    ):
         self.callback = callback
         self.grab = grab  # EVIOCGRAB: keep keystrokes out of the console tty
-        self.devices = find_keyboards()
+        self.rescan_seconds = rescan_seconds
+        self._sel = selectors.DefaultSelector()
+        self._devices: dict[str, evdev.InputDevice] = {}  # path → device
         self._running = False
         self._thread: threading.Thread | None = None
 
-    def start(self) -> None:
-        if not self.devices:
-            raise RuntimeError("no keyboard devices found under /dev/input")
+    # -- device bookkeeping ----------------------------------------------
+
+    def _add_device(self, dev: evdev.InputDevice) -> None:
         if self.grab:
-            for dev in self.devices:
-                try:
-                    dev.grab()
-                except OSError:
-                    pass
+            try:
+                dev.grab()
+            except OSError:
+                pass
+        try:
+            self._sel.register(dev, selectors.EVENT_READ)
+        except (KeyError, ValueError, OSError):
+            return
+        self._devices[dev.path] = dev
+
+    def _drop_device(self, dev: evdev.InputDevice) -> None:
+        try:
+            self._sel.unregister(dev)
+        except (KeyError, ValueError):
+            pass
+        if self.grab:
+            try:
+                dev.ungrab()
+            except OSError:
+                pass
+        try:
+            dev.close()
+        except OSError:
+            pass
+        self._devices.pop(dev.path, None)
+
+    def _rescan(self) -> None:
+        """Register any newly-appeared keyboards (hot-plug)."""
+        for dev in find_keyboards():
+            if dev.path in self._devices:
+                dev.close()  # already tracking it
+                continue
+            self._add_device(dev)
+
+    # -- lifecycle --------------------------------------------------------
+
+    def start(self) -> None:
         self._running = True
+        self._rescan()  # may find nothing — that's fine, the loop keeps looking
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
 
     def _loop(self) -> None:
-        sel = selectors.DefaultSelector()
-        for dev in self.devices:
-            sel.register(dev, selectors.EVENT_READ)
+        next_rescan = 0.0
         while self._running:
-            for key, _ in sel.select(timeout=0.5):
+            now = time.monotonic()
+            if now >= next_rescan:
+                self._rescan()
+                next_rescan = now + self.rescan_seconds
+            for key, _ in self._sel.select(timeout=0.5):
                 dev = key.fileobj
                 try:
                     for event in dev.read():
@@ -111,18 +160,14 @@ class KeyboardInput:
                             import traceback  # never kill input handling
                             traceback.print_exc()
                 except OSError:
-                    pass  # device unplugged mid-read; ignore
+                    self._drop_device(dev)  # unplugged mid-read; forget it
 
     def stop(self) -> None:
         self._running = False
         if self._thread is not None:
             self._thread.join(timeout=1.0)
-        if self.grab:
-            for dev in self.devices:
-                try:
-                    dev.ungrab()
-                except OSError:
-                    pass
+        for dev in list(self._devices.values()):
+            self._drop_device(dev)
 
 
 if __name__ == "__main__":

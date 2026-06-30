@@ -44,8 +44,16 @@ def _run(cmd: list[str], timeout: float = 15.0) -> subprocess.CompletedProcess:
 OS_MOUNTPOINTS = ("/", "/boot", "/boot/firmware")
 
 
+def _part_bytes(part: dict) -> int:
+    """Partition size in bytes from an lsblk ``-b`` record (0 if absent)."""
+    try:
+        return int(part.get("size") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def select_partition(tree: dict, fstypes: set[str] = SUPPORTED_FSTYPES) -> dict | None:
-    """Pick the first USB partition with a supported FS from lsblk JSON.
+    """Pick the **largest** USB partition with a supported FS from lsblk JSON.
 
     Pure (no subprocess) so the selection rules are unit-testable. The reliable
     discriminator is **transport == usb**: on a real Pi the SD card reports
@@ -53,7 +61,15 @@ def select_partition(tree: dict, fstypes: set[str] = SUPPORTED_FSTYPES) -> dict 
     /boot partition), so flags can't tell the OS disk from a data drive — but
     the SD card is ``tran=mmc`` and a USB stick/drive is ``tran=usb``. As
     defence-in-depth we also refuse any partition mounted at an OS path.
+
+    Among USB candidates we pick the **biggest**, not the first: a real media
+    drive often also carries a tiny FAT EFI/recovery partition (e.g. a 200 MB
+    ``sda1`` beside the 223 GB exfat ``sda2``), and that small partition sorts
+    first by name — picking it would mount an empty volume and show "no videos".
+    Size is the robust tie-break; falls back to first-seen when sizes are absent.
     """
+    best: dict | None = None
+    best_size = -1
     for disk in tree.get("blockdevices", []):
         if (disk.get("tran") or "").lower() != "usb":
             continue
@@ -64,13 +80,15 @@ def select_partition(tree: dict, fstypes: set[str] = SUPPORTED_FSTYPES) -> dict 
                 continue
             if (part.get("mountpoint") or "") in OS_MOUNTPOINTS:
                 continue
-            return part  # has NAME, PATH, FSTYPE, MOUNTPOINT
-    return None
+            size = _part_bytes(part)
+            if size > best_size:  # strictly greater → first-seen wins on a tie
+                best, best_size = part, size
+    return best  # has NAME, PATH, FSTYPE, MOUNTPOINT, SIZE
 
 
 def find_data_partition(fstypes: set[str] = SUPPORTED_FSTYPES) -> dict | None:
-    """Return the first USB partition with a supported filesystem."""
-    res = _run(["lsblk", "-J", "-o", "NAME,PATH,TYPE,FSTYPE,TRAN,MOUNTPOINT"])
+    """Return the largest USB partition with a supported filesystem."""
+    res = _run(["lsblk", "-J", "-b", "-o", "NAME,PATH,TYPE,FSTYPE,TRAN,MOUNTPOINT,SIZE"])
     if res.returncode != 0:
         return None
     try:

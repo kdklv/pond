@@ -47,6 +47,11 @@ MPV_ARGS = [
     "--keep-open=yes",
     "--no-config",
     "--no-terminal",
+    # Never write watch-later/resume state to the (read-only) root: --no-config
+    # ignores config files but not the resume machinery, so disable it outright
+    # and divert any residual writes to tmpfs.
+    "--no-resume-playback",
+    "--watch-later-directory=/tmp/pondtv-watch-later",
 ]
 
 
@@ -100,6 +105,14 @@ class MpvIPC:
             except OSError:
                 pass
             self._sock = None
+
+    def is_connected(self) -> bool:
+        """True while the socket is open and the reader thread is alive.
+
+        Flips false when mpv dies (the reader sees the socket close); the manager
+        polls this to drive its watchdog/reconnect.
+        """
+        return self._running and self._sock is not None
 
     # -- background reader ------------------------------------------------
 
@@ -201,6 +214,11 @@ class MpvIPC:
 
     def set_property(self, name: str, value: Any) -> None:
         self.command("set_property", name, value)
+
+    def set_property_async(self, name: str, value: Any) -> None:
+        """Fire-and-forget property set — safe to call while holding a lock or
+        from the reader thread, unlike the blocking :meth:`set_property`."""
+        self.command_async("set_property", name, value)
 
     def set_pause(self, paused: bool) -> None:
         self.set_property("pause", paused)

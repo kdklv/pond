@@ -1,0 +1,4 @@
+# PondTV runtime dependencies. Pinned with a compatible-release floor so a Pi
+# reflash is reproducible. (mpv itself is a system package — see docs/DEVELOPMENT.md.)
+evdev~=1.9      # headless evdev keyboard input (no X11)
+PyYAML~=6.0     # config.yml parsing

@@ -19,9 +19,9 @@ def _disk(name, tran, children):
             "tran": tran, "children": children}
 
 
-def _part(name, fstype, mountpoint=None):
+def _part(name, fstype, mountpoint=None, size=0):
     return {"name": name, "path": f"/dev/{name}", "type": "part",
-            "fstype": fstype, "mountpoint": mountpoint}
+            "fstype": fstype, "mountpoint": mountpoint, "size": size}
 
 
 class SelectPartitionTests(unittest.TestCase):
@@ -40,6 +40,18 @@ class SelectPartitionTests(unittest.TestCase):
                                      _part("mmcblk0p2", "ext4", "/")]),
         ]}
         self.assertIsNone(select_partition(tree))
+
+    def test_picks_largest_when_tiny_fat_partition_present(self):
+        # The real trap hit on hardware: a 200MB FAT EFI/recovery partition
+        # (sda1) sorts first by name but is empty; the media lives on the big
+        # exfat sda2. Selection must pick the larger one, not the first.
+        tree = {"blockdevices": [
+            _disk("sda", "usb", [
+                _part("sda1", "vfat", size=200 * 1024**2),
+                _part("sda2", "exfat", size=223 * 1024**3),
+            ]),
+        ]}
+        self.assertEqual(select_partition(tree)["path"], "/dev/sda2")
 
     def test_usb_ntfs(self):
         tree = {"blockdevices": [_disk("sda", "usb", [_part("sda1", "ntfs")])]}

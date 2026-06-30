@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pondtv"
+version = "0.1.0"
+description = "Turn a Raspberry Pi 4 into a plug-and-play dumb-TV channel for a USB media library"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+    "evdev~=1.9",   # headless evdev keyboard input (no X11)
+    "PyYAML~=6.0",  # config.yml parsing
+]
+
+[project.scripts]
+pondtv = "pondtv.__main__:main"
+
+[project.optional-dependencies]
+dev = ["pytest~=8.0"]
+
+[tool.setuptools]
+packages = ["pondtv"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

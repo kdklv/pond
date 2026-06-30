@@ -130,11 +130,21 @@ class State:
 
     # -- persistence ------------------------------------------------------
 
-    def save(self) -> None:
-        """Atomically write state to the USB (temp → fsync → rename → fsync dir)."""
+    def serialize(self) -> bytes:
+        """Snapshot the in-memory state to bytes ready for :meth:`write_payload`.
+
+        Kept separate from the file write so a caller holding a lock can take a
+        cheap, consistent snapshot and then do the slow fsync without the lock
+        (see Manager's writer thread). Compact (no indent): the file is rewritten
+        in full on every save and lands on a flaky removable drive, so fewer
+        bytes means a shorter, safer fsync.
+        """
+        return json.dumps(self._data, separators=(",", ":")).encode("utf-8")
+
+    def write_payload(self, payload: bytes) -> None:
+        """Atomically write ``payload`` to the USB (temp → fsync → rename → fsync dir)."""
         self.state_dir.mkdir(parents=True, exist_ok=True)
         tmp = self.state_dir / (STATE_FILENAME + ".tmp")
-        payload = json.dumps(self._data, indent=2).encode("utf-8")
 
         fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
         try:
@@ -156,6 +166,11 @@ class State:
                 os.close(dir_fd)
         except OSError:
             pass
+
+    def save(self) -> None:
+        """Serialize and atomically write current state. Convenience for callers
+        that don't need to separate the snapshot from the write."""
+        self.write_payload(self.serialize())
 
     # -- introspection (mostly for tests/debug) --------------------------
 

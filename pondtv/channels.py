@@ -1,29 +1,13 @@
-"""Derive the channel list from the USB folder tree.
+"""Derive the channel list from the USB folder tree — no metadata or scraping.
 
-The one rule (see README / docs/PLAN.md), with no metadata, scrapers, or
-filename parsing:
+> A channel is the first folder beneath a top-level category; everything deeper
+> collapses upward into it. A category holding loose video files directly is
+> itself one channel.
 
-> A channel is the first folder beneath a top-level category. Everything deeper
-> collapses upward into that one channel, ordered by *natural* sort of the full
-> relative path. A category that holds loose video files directly is itself one
-> channel.
-
-So, given a USB root:
-
-* **Categories** are the top-level folders (``Movies/``, ``TV_Shows/`` …).
-* Inside a category, **each immediate subfolder is one channel** that gathers
-  every video beneath it at any depth (``TV_Shows/ShowName/Season 01/…`` and
-  ``…/Specials/…`` collapse into the single ``TV_Shows/ShowName`` channel).
-* **Loose video files directly inside a category** form one channel for that
-  category (``Ripped YT Channels/`` of loose clips → one channel).
-
-Channels are ordered by natural sort of their relative path; videos within a
-channel are ordered by natural sort of *their* full relative path — which is
-what makes ``S01E02`` come before ``S01E10`` and Season 01 before Season 02.
-
-The list is **derived, never stored** — rebuilt on every mount. Keys are paths
-**relative to the USB root**, POSIX-style (forward slashes), so a drive works on
-any Pi regardless of where it mounts.
+Channels and their videos are ordered by *natural* sort of the full relative
+path (so ``Season 01/…/S01E02`` precedes ``Season 02/…/S02E01``, and ``E2``
+precedes ``E10``). The list is derived on every mount, never stored; keys are
+paths relative to the USB root, POSIX-style, so a drive works on any Pi.
 """
 
 from __future__ import annotations
@@ -107,7 +91,7 @@ def _videos_under(folder: Path, root: Path) -> list[str]:
     """
     found: list[str] = []
     for dirpath, dirnames, filenames in os.walk(folder, onerror=lambda _e: None):
-        dirnames[:] = [d for d in dirnames if not _is_hidden(d)]  # prune hidden dirs
+        dirnames[:] = [d for d in dirnames if not _is_hidden(d)]
         for name in filenames:
             if _is_hidden(name) or not _has_video_ext(name):
                 continue
@@ -116,23 +100,31 @@ def _videos_under(folder: Path, root: Path) -> list[str]:
     return found
 
 
-def _loose_videos(folder: Path, root: Path) -> list[str]:
-    """Videos directly inside ``folder`` (non-recursive), as rel keys."""
-    found: list[str] = []
+def _scan_category(folder: Path, root: Path) -> tuple[list[str], list[os.DirEntry]]:
+    """One scandir pass over a category: its loose videos and its subdirectories.
+
+    Returns ``(loose_video_rel_keys_sorted, subdir_entries)``. Folding both into a
+    single pass avoids scanning the category directory twice (once for files, once
+    for folders), which matters on slow USB media.
+    """
+    loose: list[str] = []
+    subdirs: list[os.DirEntry] = []
     try:
         with os.scandir(folder) as it:
             for entry in it:
-                if _is_hidden(entry.name) or not _has_video_ext(entry.name):
+                if _is_hidden(entry.name):
                     continue
                 try:
-                    if entry.is_file():
-                        found.append(Path(entry.path).relative_to(root).as_posix())
+                    if entry.is_dir():
+                        subdirs.append(entry)
+                    elif _has_video_ext(entry.name) and entry.is_file():
+                        loose.append(Path(entry.path).relative_to(root).as_posix())
                 except OSError:
-                    continue
+                    continue  # unreadable entry — skip it, don't crash
     except OSError:
         pass
-    found.sort(key=natural_key)
-    return found
+    loose.sort(key=natural_key)
+    return loose, subdirs
 
 
 def build_channels(root: str | Path) -> list[Channel]:
@@ -142,9 +134,9 @@ def build_channels(root: str | Path) -> list[Channel]:
 
     for category in _subdirs(root):
         cat_path = Path(category.path)
+        loose, cat_subdirs = _scan_category(cat_path, root)
 
         # Loose files directly under the category → one channel (the category).
-        loose = _loose_videos(cat_path, root)
         if loose:
             channels.append(
                 Channel(
@@ -155,7 +147,7 @@ def build_channels(root: str | Path) -> list[Channel]:
             )
 
         # Each immediate subfolder → one channel collapsing everything beneath it.
-        for sub in _subdirs(cat_path):
+        for sub in cat_subdirs:
             sub_path = Path(sub.path)
             videos = _videos_under(sub_path, root)
             if videos:
